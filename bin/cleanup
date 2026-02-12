@@ -1,0 +1,9 @@
+#!/bin/bash
+# bin/cleanup
+# Run Done cleanup, sent detection, and Waiting re-triage.
+# Use after marking emails as Done on mobile.
+
+set -uo pipefail
+source "$(dirname "$0")/common.sh"
+
+run_step "Cleanup & Lifecycle" haiku cleanup "$GMAIL_READ $GMAIL_WRITE $LOCAL_TOOLS"
