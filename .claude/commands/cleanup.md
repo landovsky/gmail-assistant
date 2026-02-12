@@ -27,10 +27,19 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
 
 ## Steps
 
-1. **Done cleanup.** Search Gmail for threads with label `🤖 AI/Done` (Label_41).
-   For each thread found:
-   - Remove all `🤖 AI/*` labels EXCEPT `🤖 AI/Done` (Label_34 through Label_40) using `modify_email` with `removeLabelIds`. Keep Label_41 as permanent audit marker.
-   - Also remove the INBOX label to archive the thread
+1. **Done cleanup.** Search Gmail for messages with label `🤖 AI/Done` (Label_41).
+   **IMPORTANT:** Gmail labels are per-message, not per-thread. A thread may have
+   multiple messages each carrying different `🤖 AI/*` labels. You must strip labels
+   from ALL messages in the thread, not just the one returned by the search.
+   For each message found:
+   - Get its Thread ID from `read_email`
+   - Collect ALL message IDs you've already seen for this thread (from this search
+     and from additional searches below). Skip threads you've already processed.
+   - Search for any other messages in the same thread that carry AI labels:
+     `thread:<thread_id>` (or use the subject to find related messages).
+   - Call `batch_modify_emails` with ALL message IDs from the thread, with
+     `removeLabelIds: ["Label_34", "Label_35", "Label_36", "Label_37", "Label_38", "Label_39", "Label_40", "INBOX"]`.
+     Keep Label_41 (Done) as permanent audit marker.
    - Update local DB: `UPDATE emails SET status='archived', acted_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE gmail_thread_id='...'`
    - Log: `INSERT INTO email_events (gmail_thread_id, event_type, detail) VALUES (?, 'archived', 'Done cleanup: archived thread, kept 🤖 AI/Done label')`
 
