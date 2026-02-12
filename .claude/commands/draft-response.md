@@ -55,6 +55,11 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
       UPDATE emails SET status='drafted', draft_id='...', drafted_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
       WHERE gmail_thread_id='...'
       ```
+   i. Log to audit table:
+      ```sql
+      INSERT INTO email_events (gmail_thread_id, event_type, detail, draft_id)
+      VALUES ('...', 'draft_created', 'Draft created with style: ...', '...')
+      ```
 
 ## Draft quality guidelines
 

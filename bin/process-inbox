@@ -20,7 +20,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # Tools shared across all steps (never includes send_email or delete_email)
-GMAIL_READ="mcp__gmail__search_emails mcp__gmail__read_email"
+GMAIL_READ="mcp__gmail__search_emails mcp__gmail__read_email mcp__gmail__list_email_labels"
 GMAIL_WRITE="mcp__gmail__modify_email mcp__gmail__batch_modify_emails"
 GMAIL_DRAFT="mcp__gmail__draft_email"
 LOCAL_TOOLS="Bash Read Glob Grep"

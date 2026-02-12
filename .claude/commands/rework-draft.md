@@ -30,8 +30,11 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
    b. If rework_count >= 3, this thread exceeded the rework limit:
       - Move label to `🤖 AI/Action Required`: modify_email with addLabelIds ["Label_37"], removeLabelIds ["Label_36"]
       - Update DB: `UPDATE emails SET status='skipped', updated_at=CURRENT_TIMESTAMP WHERE gmail_thread_id='...'`
+      - Log: `INSERT INTO email_events (gmail_thread_id, event_type, detail) VALUES ('...', 'rework_limit_reached', 'Rework limit (3) exceeded, moved to Action Required')`
       - Skip to next thread.
-   c. Read the current draft using `read_email` with the stored draft_id.
+   c. Find the current draft: search Gmail `in:draft` in the thread to locate
+      it (the stored draft_id is a resource ID, not a message ID — cannot use
+      `read_email` on it directly). Read the draft content once you find it.
    d. Extract user instructions: everything ABOVE the `✂️` marker line in the draft body.
    e. Parse instructions for:
       - Style overrides ("informal tone", "formal please")
@@ -43,6 +46,7 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
    g. Load the appropriate communication style from `config/communication_styles.yml`.
    h. Regenerate the draft with the user's instructions + any additional context.
    i. Move the old draft to Trash via `modify_email` with `addLabelIds: ["TRASH"]` (recoverable for 30 days, no permanent deletion).
+      Log: `INSERT INTO email_events (gmail_thread_id, event_type, detail, draft_id) VALUES ('...', 'draft_trashed', 'Old draft trashed for rework', '...')`
    j. Create a new draft via `draft_email` on the same thread:
       - Preserve threadId and inReplyTo from the original
       - Include the rework marker in the new draft
@@ -56,6 +60,7 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
       UPDATE emails SET rework_count = rework_count + 1, draft_id = '...', last_rework_instruction = '...', status = 'drafted', updated_at = CURRENT_TIMESTAMP
       WHERE gmail_thread_id = '...'
       ```
+   n. Log: `INSERT INTO email_events (gmail_thread_id, event_type, detail, draft_id) VALUES ('...', 'draft_reworked', 'Rework #N: <instruction summary>', '...')`
 
 ## Important
 

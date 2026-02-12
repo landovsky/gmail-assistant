@@ -36,9 +36,13 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
    - Log: `INSERT INTO email_events (gmail_thread_id, event_type, detail) VALUES (?, 'archived', 'Done cleanup: archived thread, kept 🤖 AI/Done label')`
 
 2. **Sent draft detection.** Search Gmail for threads with label `🤖 AI/Outbox` (Label_35).
-   For each thread, query the local DB for the stored `draft_id`.
-   If a draft_id exists, try to read it via `read_email`. If it fails (draft no longer exists),
-   the user likely sent it. Remove `🤖 AI/Outbox` label and update DB status to `sent`.
+   For each thread, query the local DB for the stored `draft_id` and `subject`.
+   To check if the draft still exists, search Gmail: `in:draft subject:"<subject>"`.
+   If the draft is gone (no results or the draft_id no longer matches), the user
+   likely sent it. Remove `🤖 AI/Outbox` label, update DB status to `sent`,
+   and log: `INSERT INTO email_events (gmail_thread_id, event_type, detail) VALUES (?, 'sent_detected', 'Draft no longer exists, marking as sent')`
+   **Note:** `draft_email` returns a draft resource ID (e.g. `r-7936...`), NOT a
+   message ID — you cannot use `read_email` on it. Use search instead.
 
 3. **Waiting re-triage.** Search Gmail for threads with label `🤖 AI/Waiting` (Label_40).
    For each thread, query the local DB for stored `message_count`.

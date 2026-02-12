@@ -20,7 +20,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/Users/tomas/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <string>/Users/tomas/.local/bin:/Users/tomas/.nvm/versions/node/v22.21.0/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
     </dict>
 
     <key>StandardOutPath</key>
