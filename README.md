@@ -13,7 +13,7 @@ The system never sends or deletes email. It only reads, labels, and creates draf
   - [Manually request a draft](#manually-request-a-draft) — planned
   - [Mark an email as done](#mark-an-email-as-done) — implemented
   - [Detect payment requests](#detect-payment-requests) — implemented
-  - [Get a morning briefing](#get-a-morning-briefing) — implemented
+  - [Get a morning briefing](#get-a-morning-briefing) — planned
   - [Customize communication style](#customize-communication-style) — implemented
 - [Setup](#setup)
 - [Configuration](#configuration)
@@ -102,13 +102,9 @@ bin/cleanup    # run cleanup manually
 Emails containing payment requests, invoices, or billing statements are automatically detected during triage and labeled `🤖 AI/Payment Requests`. No further processing is done — the label surfaces them for your attention.
 
 ### Get a morning briefing
-> **Status:** Implemented
+> **Status:** Planned
 
-Generates a local HTML dashboard summarizing your inbox state: action queue, pending drafts, payment requests, and waiting threads.
-
-```bash
-claude -p /morning-briefing
-```
+Create a summary of your inbox state: action queue, pending drafts, payment requests, and waiting threads.
 
 ### Customize communication style
 > **Status:** Implemented
