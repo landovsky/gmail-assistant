@@ -2,53 +2,128 @@
 
 A self-hosted, AI-powered email inbox manager built on [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Gmail MCP](https://www.npmjs.com/package/@gongrzhe/server-gmail-autoauth-mcp). It classifies incoming email, generates draft replies, extracts invoice data, and surfaces everything through Gmail labels you can act on from your phone.
 
-```
-New email → Triage (Haiku) → Draft reply (Sonnet) → You review on mobile → Done
-```
-
 The system never sends or deletes email. It only reads, labels, and creates drafts.
 
-## How it works
+## Table of contents
 
-Every 30 minutes (or on demand), a pipeline runs three steps:
+- [Use cases](#use-cases)
+  - [Automatic inbox triage](#automatic-inbox-triage) — implemented
+  - [Review and send an AI draft](#review-and-send-an-ai-draft) — implemented
+  - [Revise a draft](#revise-a-draft) — implemented
+  - [Manually request a draft](#manually-request-a-draft) — planned
+  - [Mark an email as done](#mark-an-email-as-done) — implemented
+  - [Track invoices](#track-invoices) — implemented
+  - [Get a morning briefing](#get-a-morning-briefing) — implemented
+  - [Customize communication style](#customize-communication-style) — implemented
+- [Setup](#setup)
+- [Configuration](#configuration)
+- [Commands reference](#commands-reference)
+- [Architecture](#architecture)
+- [Safety guarantees](#safety-guarantees)
 
-| Step | Model | What it does |
-|------|-------|-------------|
-| **Triage** | Haiku | Classifies unread email into 5 categories |
-| **Draft** | Sonnet | Writes reply drafts for emails that need a response |
-| **Invoices** | Haiku | Extracts vendor, amount, due date from invoices |
+## Use cases
 
-Emails are tagged with nested Gmail labels under `🤖 AI/`:
+### Automatic inbox triage
+> **Status:** Implemented
 
-| Label | Meaning |
-|-------|---------|
-| Needs Response | Someone is waiting for your reply |
-| Action Required | You need to do something outside email |
-| Invoice | Contains a payment request or bill |
-| FYI | Notification, newsletter, no action needed |
-| Waiting | You sent the last message, awaiting reply |
-| Outbox | Draft is ready for your review |
-| Rework | You asked for a draft revision |
-| Done | You've handled it (permanent audit marker) |
+Every 30 minutes (or on demand), the pipeline scans your inbox and classifies each email into one of five categories:
 
-### The rework loop
+| Category | Label | Meaning |
+|----------|-------|---------|
+| Needs Response | `🤖 AI/Needs Response` | Someone is asking you a direct question or expects a reply |
+| Action Required | `🤖 AI/Action Required` | You need to do something outside email (sign, approve, attend) |
+| Invoice | `🤖 AI/Invoice` | Contains a payment request or bill |
+| FYI | `🤖 AI/FYI` | Notification, newsletter, no action needed |
+| Waiting | `🤖 AI/Waiting` | You sent the last message, awaiting a reply |
 
-When you see a draft you don't like:
+When someone replies to a Waiting thread, the system detects the new message and re-triages it automatically.
 
-1. Open the draft in Gmail — you'll see a `✂️` marker
-2. Type your feedback above the marker (e.g. "make it shorter", "add the deadline")
+```bash
+bin/process-inbox triage    # run manually
+bin/process-inbox all       # full pipeline (triage + draft + invoices)
+```
+
+### Review and send an AI draft
+> **Status:** Implemented
+
+After triage, the pipeline automatically writes reply drafts for all `Needs Response` emails. Drafts appear in your Gmail drafts folder with the `🤖 AI/Outbox` label.
+
+1. Open a draft in Gmail (mobile or desktop)
+2. Review the AI-generated reply
+3. Edit if needed, then hit Send
+
+The system detects when a draft disappears from your drafts folder and marks it as sent.
+
+### Revise a draft
+> **Status:** Implemented
+
+When a draft isn't quite right:
+
+1. Open the draft in Gmail — you'll see a `✂️` marker separating instructions from content
+2. Type your feedback **above** the marker (e.g. "make it shorter", "more formal", "mention the Tuesday deadline")
 3. Apply the `🤖 AI/Rework` label
-4. Next pipeline run regenerates the draft with your instructions
+4. Next run regenerates the draft incorporating your instructions
 
 Up to 3 reworks per thread, then it moves to Action Required for you to handle manually.
 
-## Prerequisites
+```bash
+bin/rework    # process pending rework requests
+```
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) with an Anthropic API key
-- A Google Cloud project with Gmail API enabled and OAuth credentials
-- Node.js (for npx / Gmail MCP server)
-- SQLite3 (pre-installed on macOS)
-- macOS recommended (uses launchd for scheduling; adaptable to cron/systemd)
+### Manually request a draft
+> **Status:** Planned
+
+For emails the system didn't auto-classify as needing a response, or when you want to provide specific instructions upfront:
+
+1. Open the email in Gmail and hit **Reply**
+2. Write your notes for the AI (e.g. "politely decline, suggest next month instead")
+3. Save the draft
+4. Apply the `🤖 AI/Needs Response` label to the thread
+
+The next pipeline run picks it up, reads your notes, and generates a full draft reply based on your instructions. The flow then continues as a normal [review](#review-and-send-an-ai-draft) or [rework](#revise-a-draft).
+
+### Mark an email as done
+> **Status:** Implemented
+
+When you've dealt with an email (sent a reply, completed the action, paid the invoice):
+
+1. Apply the `🤖 AI/Done` label in Gmail
+2. Next cleanup run archives the thread — removes it from Inbox and strips all AI labels except Done
+
+The `🤖 AI/Done` label is kept permanently as an audit trail marker.
+
+```bash
+bin/cleanup    # run cleanup manually
+```
+
+### Track invoices
+> **Status:** Implemented
+
+Emails classified as `Invoice` get structured data extracted automatically: vendor name, invoice number, amount, currency, due date, and variable symbol (for Czech payments).
+
+```bash
+bin/process-inbox invoices
+```
+
+### Get a morning briefing
+> **Status:** Implemented
+
+Generates a local HTML dashboard summarizing your inbox state: action queue, pending drafts, invoice tracker, and waiting threads.
+
+```bash
+claude -p /morning-briefing
+```
+
+### Customize communication style
+> **Status:** Implemented
+
+The system supports three built-in response styles — **formal**, **business** (default), and **informal**. Each has its own rules, sign-off, and example replies. Per-sender and per-domain overrides are configured in `config/contacts.yml`.
+
+To refine styles from your own 60-day sent email history:
+
+```bash
+claude -p /update-style
+```
 
 ## Setup
 
@@ -75,7 +150,7 @@ Follow the [Gmail MCP docs](https://www.npmjs.com/package/@gongrzhe/server-gmail
 
 ### 3. Create Gmail labels
 
-Create these nested labels in Gmail (Settings → Labels → Create new):
+Create these nested labels in Gmail (Settings > Labels > Create new):
 
 ```
 🤖 AI
@@ -100,11 +175,8 @@ sqlite3 data/inbox.db < data/schema.sql
 ### 5. Test it
 
 ```bash
-# Run just the triage step
-bin/process-inbox triage
-
-# Run the full pipeline
-bin/process-inbox all
+bin/process-inbox triage    # classify your inbox
+bin/process-inbox all       # full pipeline
 ```
 
 ### 6. (Optional) Automate with launchd
@@ -115,7 +187,15 @@ cp config/com.gmail-assistant.process-inbox.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.gmail-assistant.process-inbox.plist
 ```
 
-This runs the pipeline every 30 minutes. Logs go to `logs/`.
+Runs the pipeline every 30 minutes. Logs go to `logs/`.
+
+### Prerequisites
+
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) with an Anthropic API key
+- A Google Cloud project with Gmail API enabled and OAuth credentials
+- Node.js (for npx / Gmail MCP server)
+- SQLite3 (pre-installed on macOS)
+- macOS recommended (uses launchd for scheduling; adaptable to cron/systemd)
 
 ## Configuration
 
@@ -143,15 +223,9 @@ blacklist:   # Always classified as FYI, never drafted
 
 ### `config/communication_styles.yml`
 
-Defines three response styles — **formal**, **business** (default), **informal** — each with rules, sign-off, and examples. You can refine these from your own sent email history:
+Defines three response styles — **formal**, **business** (default), **informal** — each with rules, sign-off, and examples.
 
-```bash
-claude -p /update-style
-```
-
-## Commands
-
-Run standalone or as part of the pipeline:
+## Commands reference
 
 | Command | Script | Purpose |
 |---------|--------|---------|
@@ -162,6 +236,14 @@ Run standalone or as part of the pipeline:
 | `/rework-draft` | `bin/rework` | Process draft feedback |
 | `/morning-briefing` | — | Generate HTML dashboard summary |
 | `/update-style` | — | Learn communication patterns from sent mail |
+
+### Logging
+
+All scripts log to both stdout and `logs/<script-name>.log`. Set log verbosity with:
+
+```bash
+GMA_LOG_LEVEL=debug bin/process-inbox all    # debug, info (default), warn, error
+```
 
 ## Architecture
 
