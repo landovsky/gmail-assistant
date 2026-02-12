@@ -6,4 +6,10 @@
 set -uo pipefail
 source "$(dirname "$0")/common.sh"
 
+log_info "=== cleanup: started ==="
+SCRIPT_START=$(date +%s)
+
 run_step "Cleanup & Lifecycle" sonnet cleanup "$GMAIL_READ $GMAIL_WRITE $LOCAL_TOOLS"
+
+SCRIPT_END=$(date +%s)
+log_info "=== cleanup: finished ($(( SCRIPT_END - SCRIPT_START ))s total) ==="

@@ -11,6 +11,9 @@
 set -uo pipefail
 source "$(dirname "$0")/common.sh"
 
+SCRIPT_START=$(date +%s)
+log_info "=== process-inbox: started (mode=${1:-all}) ==="
+
 case "${1:-all}" in
     triage)   run_step "Inbox Triage" haiku inbox-triage "$GMAIL_READ $GMAIL_WRITE $LOCAL_TOOLS" ;;
     draft)    run_step "Draft Responses" sonnet draft-response "$GMAIL_READ $GMAIL_WRITE $GMAIL_DRAFT $LOCAL_TOOLS" ;;
@@ -20,11 +23,12 @@ case "${1:-all}" in
         run_step "Inbox Triage" haiku inbox-triage "$GMAIL_READ $GMAIL_WRITE $LOCAL_TOOLS"
         run_step "Draft Responses" sonnet draft-response "$GMAIL_READ $GMAIL_WRITE $GMAIL_DRAFT $LOCAL_TOOLS"
         run_step "Process Invoices" haiku process-invoices "$GMAIL_READ $LOCAL_TOOLS"
-        echo ""
-        echo "=== [$( timestamp )] Pipeline complete ==="
         ;;
     *)
         echo "Usage: $0 [triage|draft|invoices|all]"
         exit 1
         ;;
 esac
+
+SCRIPT_END=$(date +%s)
+log_info "=== process-inbox: finished ($(( SCRIPT_END - SCRIPT_START ))s total) ==="
