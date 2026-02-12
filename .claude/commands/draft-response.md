@@ -32,9 +32,13 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
       For Phase 1, this will typically be `business`.
    c. Load style rules, examples, sign_off, and language setting.
    d. Generate a draft reply following the style rules.
-   e. Prepend the rework marker to the draft body:
+   e. Prepend the rework marker to the draft body. Format:
+      two blank lines, then `✂️` on its own line, then blank line,
+      then the draft. This gives the user space to tap and type above the marker.
       ```
-      ---✂--- Your instructions above this line / Draft below ---✂---
+
+
+      ✂️
 
       [draft content here]
       ```

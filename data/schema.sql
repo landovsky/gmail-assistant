@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS email_events (
     event_type TEXT NOT NULL
         CHECK (event_type IN (
             'classified', 'label_added', 'label_removed',
-            'draft_created', 'draft_deleted', 'draft_reworked',
+            'draft_created', 'draft_trashed', 'draft_reworked',
             'sent_detected', 'archived', 'rework_limit_reached',
             'waiting_retriaged', 'error'
         )),

@@ -99,13 +99,13 @@ Cleanup: remove all 🤖 AI/* labels EXCEPT Done, archive from INBOX, DB → arc
 ### How it works
 
 1. User sees a draft in `🤖 AI/Outbox` on mobile
-2. User opens the draft and types instructions **at the top** of the draft body, above a `---✂---` marker line
+2. User opens the draft and types instructions **at the top** of the draft body, above a `✂️` marker line
 3. User saves the draft and changes the label from `🤖 AI/Outbox` → `🤖 AI/Rework`
 4. Next processor run picks up `🤖 AI/Rework` threads:
-   - Reads the user's note (everything above the `---✂---` marker)
+   - Reads the user's note (everything above the `✂️` marker)
    - If the note references other emails (e.g. "see the April email"), searches Gmail via MCP for matching threads with that contact around the referenced time
    - Feeds the note + any retrieved context into `rework-draft` command
-   - Deletes the old draft and creates a new one on the same thread (Gmail MCP has no draft update — delete + recreate is the pattern)
+   - Moves the old draft to Trash and creates a new one on the same thread (Gmail MCP has no draft update — trash + recreate is the pattern; Trash auto-purges after 30 days)
    - Moves label back to `🤖 AI/Outbox`
    - If this is the 3rd rework (max), adds a warning to the draft and moves to `🤖 AI/Action Required` instead
 
@@ -114,7 +114,9 @@ Cleanup: remove all 🤖 AI/* labels EXCEPT Done, archive from INBOX, DB → arc
 When the processor creates a draft, it inserts the marker:
 
 ```
----✂--- Your instructions above this line / Draft below ---✂---
+
+
+✂️
 
 Dobrý den paní Nováková,
 
@@ -125,7 +127,8 @@ The user types above the marker on mobile:
 
 ```
 We agreed on Thursday in the April email. Reference that.
----✂--- Your instructions above this line / Draft below ---✂---
+
+✂️
 
 Dobrý den paní Nováková,
 
@@ -416,7 +419,7 @@ Generate email reply drafts for threads labeled `🤖 AI/Needs Response`.
       (rules, examples, sign_off, language).
    d. Generate a draft reply following the style rules.
    e. Prepend the rework marker to the draft body:
-      `---✂--- Your instructions above this line / Draft below ---✂---`
+      `✂️`
    f. Create the draft as a reply to the thread via Gmail MCP.
    g. Move the label from `🤖 AI/Needs Response` to `🤖 AI/Outbox`.
    h. Update the local DB: set status to `drafted`, store draft_id.
@@ -452,7 +455,7 @@ Process user feedback on drafts labeled `🤖 AI/Rework`.
       `🤖 AI/Action Required`, update DB status, and skip to next thread.
    b. Fetch the current draft from the thread.
    c. Extract user instructions: everything ABOVE the
-      `---✂---` marker line in the draft body.
+      `✂️` marker line in the draft body.
    d. Parse the instructions for:
       - Style overrides ("informal tone", "formal please")
       - Context references ("the April email", "our last conversation")
@@ -466,10 +469,11 @@ Process user feedback on drafts labeled `🤖 AI/Rework`.
       Otherwise, use the original style.
    g. Regenerate the draft with the user's instructions + any
       additional context.
-   h. Delete the old draft via Gmail MCP, then create a new draft
-      as a reply on the same thread (Gmail MCP has no draft update
-      — delete + recreate is the pattern). Preserve the thread_id
-      and in_reply_to from the original draft.
+   h. Move the old draft to Trash via `modify_email` with
+      `addLabelIds: ["TRASH"]`, then create a new draft as a reply
+      on the same thread (Gmail MCP has no draft update — trash +
+      recreate is the pattern). Preserve the thread_id and
+      in_reply_to from the original draft.
    i. If this is the 3rd rework (rework_count will become 3), prepend
       a warning to the draft body above the marker:
       `⚠️ This is the last automatic rework. Further changes must be made manually.`
@@ -715,7 +719,7 @@ CREATE TABLE IF NOT EXISTS email_events (
     event_type TEXT NOT NULL
         CHECK (event_type IN (
             'classified', 'label_added', 'label_removed',
-            'draft_created', 'draft_deleted', 'draft_reworked',
+            'draft_created', 'draft_trashed', 'draft_reworked',
             'sent_detected', 'archived', 'rework_limit_reached',
             'waiting_retriaged', 'error'
         )),
@@ -765,7 +769,7 @@ gmail-inbox-manager/
 - **No duplicate labels.** Check existing labels on a thread before applying new ones.
 - **Thread-level keying.** All processing is keyed on `gmail_thread_id`, not individual message IDs. A thread is one unit of work.
 - **No automatic sending.** The system NEVER sends an email. It only creates drafts and applies labels. The user always sends manually.
-- **No destructive actions.** The system never deletes emails or removes user-applied labels. It only adds/moves `🤖 AI/*` labels and creates/updates drafts. Draft deletion only occurs as part of the delete+recreate pattern during rework (the new draft replaces the old one on the same thread).
+- **No destructive actions.** The system never permanently deletes emails or removes user-applied labels. It only adds/moves `🤖 AI/*` labels and creates/updates drafts. Old drafts are moved to Trash (recoverable for 30 days) during rework, never permanently deleted.
 - **Rework is bounded.** After 3 rework cycles on the same thread, the system adds a warning to the final draft and moves it to `🤖 AI/Action Required` for manual handling. The `rework_count` is tracked in the local DB.
 
 ### Error handling

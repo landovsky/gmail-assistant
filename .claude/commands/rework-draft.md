@@ -32,7 +32,7 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
       - Update DB: `UPDATE emails SET status='skipped', updated_at=CURRENT_TIMESTAMP WHERE gmail_thread_id='...'`
       - Skip to next thread.
    c. Read the current draft using `read_email` with the stored draft_id.
-   d. Extract user instructions: everything ABOVE the `---✂---` marker line in the draft body.
+   d. Extract user instructions: everything ABOVE the `✂️` marker line in the draft body.
    e. Parse instructions for:
       - Style overrides ("informal tone", "formal please")
       - Context references ("the April email", "our last conversation")
@@ -42,7 +42,7 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
       (same sender, referenced time period, keywords) and include relevant excerpts.
    g. Load the appropriate communication style from `config/communication_styles.yml`.
    h. Regenerate the draft with the user's instructions + any additional context.
-   i. Delete the old draft via `delete_email` with the draft_id.
+   i. Move the old draft to Trash via `modify_email` with `addLabelIds: ["TRASH"]` (recoverable for 30 days, no permanent deletion).
    j. Create a new draft via `draft_email` on the same thread:
       - Preserve threadId and inReplyTo from the original
       - Include the rework marker in the new draft
