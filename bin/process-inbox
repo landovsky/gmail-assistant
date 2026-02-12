@@ -73,30 +73,22 @@ run_invoices() {
         "$GMAIL_READ $LOCAL_TOOLS"
 }
 
-run_briefing() {
-    run_step "Morning Briefing" haiku \
-        morning-briefing \
-        "$LOCAL_TOOLS Write"
-}
-
 # Run specific step or full pipeline
 case "${1:-all}" in
     triage)   run_triage ;;
     draft)    run_draft ;;
     rework)   run_rework ;;
     invoices) run_invoices ;;
-    briefing) run_briefing ;;
     all)
         run_triage
         run_draft
         run_rework
         run_invoices
-        run_briefing
         echo ""
         echo "=== [$( timestamp )] Pipeline complete ==="
         ;;
     *)
-        echo "Usage: $0 [triage|draft|rework|invoices|briefing|all]"
+        echo "Usage: $0 [triage|draft|rework|invoices|all]"
         exit 1
         ;;
 esac
