@@ -49,9 +49,13 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
 
 ### Phase B: Classify new emails
 
-4. Search Gmail for emails matching: `in:inbox -label:🤖 AI/Needs Response -label:🤖 AI/Outbox -label:🤖 AI/Rework -label:🤖 AI/Action Required -label:🤖 AI/Invoice -label:🤖 AI/FYI -label:🤖 AI/Waiting -label:🤖 AI/Done -in:trash -in:spam`
+4. Search Gmail for emails matching: `in:inbox newer_than:30d -label:🤖 AI/Needs Response -label:🤖 AI/Outbox -label:🤖 AI/Rework -label:🤖 AI/Action Required -label:🤖 AI/Invoice -label:🤖 AI/FYI -label:🤖 AI/Waiting -label:🤖 AI/Done -in:trash -in:spam`
    Use `search_emails` with maxResults of 20.
    Also include any threads surfaced by Phase A step 3.
+
+   **Time window:** The default `newer_than:30d` keeps the initial scan manageable.
+   The user may override this in conversation (e.g. "triage emails from the past 7 days"
+   or "triage all emails with no date limit"). Adjust the search query accordingly.
 
 5. For each email/thread:
    - Read the email content using `read_email`
