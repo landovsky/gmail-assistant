@@ -1,16 +1,14 @@
 # Specific email addresses
-# style_overrides:
-#   "novakova@zsskola.cz": formal
-#   "petr@hristehrou.cz": business
-#   "kamarad@gmail.com": informal
-#   "ucetni@firma.cz": business
+style_overrides:
+  "teacher@school.cz": formal
+  "partner@company.cz": business
+  "friend@gmail.com": informal
 
 # Domain patterns
 domain_overrides:
   "*.gov.cz": formal
   "*.mfcr.cz": formal
   "*.edu.cz": formal
-  "*.justice.cz": formal
 
 # Language overrides (when auto-detection isn't enough)
 language_overrides:
@@ -19,6 +17,5 @@ language_overrides:
 # Blacklist — always classify as FYI, never draft a response.
 # Supports glob patterns (* matches any characters).
 blacklist:
-  - "visitor*.messages@email.dostupnost-leku.cz"
   - "*@noreply.github.com"
   - "*@notifications.google.com"

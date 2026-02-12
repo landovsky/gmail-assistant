@@ -23,17 +23,6 @@ styles:
 
           S pozdravem,
           Tomáš
-      - context: "Writing to a government office about a permit"
-        input: "Vaše žádost č. 2025/1234 vyžaduje doplnění dokumentace."
-        draft: |
-          Dobrý den,
-
-          děkuji za informaci k žádosti č. 2025/1234. Mohl byste prosím upřesnit, které dokumenty je potřeba doložit?
-
-          Předem děkuji za odpověď.
-
-          S pozdravem,
-          Tomáš
 
   business:
     description: "Clients, partners, vendors, contractors, invoicing"
@@ -50,68 +39,29 @@ styles:
       - Use tykání with known contacts who use it; vykání with new or institutional contacts
       - Include specific next steps, deadlines, or asks when applicable
       - Keep it concise — busy people appreciate brevity
-      - Use numbered lists for multi-part requests to formal/institutional recipients
-      - "Apologies for delays are brief and action-oriented: acknowledge, explain in 2-3 words, state next step"
-      - Emoji sparingly OK with close contacts (🙂) but not in formal messages
-      - "In English: use em-dash lists (– item), slightly more formal phrasing than Czech tykání equivalent"
     sign_off: "Tomáš"
     sign_off_variants:
       close_contact: "T"
       with_thanks: "Díky, Tomáš"
-      contextual_thanks: "Díky za zpětnou vazbu, Tomáš"
-      formal: "S pozdravem, Tomáš Landovský"
-      formal_with_role: "S pozdravem,\nTomáš Landovský\njednatel Koperníci s.r.o."
-      english: "Tom"
+      formal: "S pozdravem, Tomáš"
     examples:
       - context: "Quick acknowledgment to a known colleague"
-        input: "Tome, hotovo, přečíslovala jsem to podle Raynetu."
+        input: "Tome, hotovo, přečíslovala jsem to podle systému."
         draft: |
           Ok. Díky.
 
           Tomáš
-      - context: "Technical explanation to a team member about a bug"
-        input: "Ahoj Tome, přeskočilo mi číslování zakázek, místo 1011 mám 1013. Podíváš se na to?"
-        draft: |
-          Ahoj Lenko.
-
-          Je to opravené. Další číslo, které dostaneš je 26-23-1012.
-
-          Problém byl v tom, že systém počítal i zakázky z cizích číselných řad. Oprava bere číslo podle nejvyššího existujícího čísla v řadě.
-
-          Tomáš
-      - context: "Formal request to a service provider (first contact, Czech)"
+      - context: "Formal request to a service provider (first contact)"
         input: "(need to terminate a service contract)"
         draft: |
           Dobrý den.
 
-          Tímto vypovídám smlouvu pro umístění sídla pro společnosti:
-
-          Firma A s.r.o.
-          Firma B s.r.o.
+          Tímto vypovídám smlouvu pro společnost Firma s.r.o.
 
           Prosím o potvrzení.
 
           S pozdravem,
-          Tomáš Landovský
-      - context: "English email to a vendor about pricing"
-        input: "Hi Tomáš, nice to e-meet you. Can you confirm the license requirements?"
-        draft: |
-          Hi Ashley.
-
-          Here is what the requirements would be:
-          – email stays with current provider
-          – 24 employees on Starter license
-          – 6 employees on Standard license
-
-          Do 30 licenses allow for better pricing?
-
-          Tomáš Landovský
-      - context: "Brief status update to a contractor"
-        input: "Ahoj Tome, posílám report za leden. Díky, T."
-        draft: |
-          Ahoj. Report je ok, prosím o fakturu.
-
-          T
+          Tomáš
 
   informal:
     description: "Friends, family, casual acquaintances"
@@ -128,11 +78,5 @@ styles:
         input: "Čau, co děláš v sobotu? Nechceš vyrazit na kolo?"
         draft: |
           Čau, jasně, sobota funguje. Dej vědět kam a kdy.
-
-          T.
-      - context: "Family member sharing photos"
-        input: "Koukni na fotky z dovolené! Bylo to super."
-        draft: |
-          Ty jo, to vypadá parádně! Kam přesně jste jeli?
 
           T.

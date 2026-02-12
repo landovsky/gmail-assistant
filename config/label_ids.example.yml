@@ -1,0 +1,12 @@
+# Gmail label IDs — run inbox-triage or check Gmail to find your label IDs
+# All labels nested under "🤖 AI/" parent
+# Used by commands to apply/remove labels via Gmail MCP
+parent: Label_XXXX           # 🤖 AI
+needs_response: Label_XXXX   # 🤖 AI/Needs Response
+outbox: Label_XXXX           # 🤖 AI/Outbox
+rework: Label_XXXX           # 🤖 AI/Rework
+action_required: Label_XXXX  # 🤖 AI/Action Required
+invoice: Label_XXXX          # 🤖 AI/Invoice
+fyi: Label_XXXX              # 🤖 AI/FYI
+waiting: Label_XXXX          # 🤖 AI/Waiting
+done: Label_XXXX             # 🤖 AI/Done
