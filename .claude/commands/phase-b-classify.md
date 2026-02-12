@@ -43,35 +43,64 @@ Use Gmail MCP tool `search_emails` with `maxResults: 20`.
 
 ## Processing Steps
 
-For each unclassified email/thread:
+**PERFORMANCE OPTIMIZATION:** Use parallel processing to minimize latency.
+Read all emails in parallel (step 1), batch classify (step 3), then batch-apply
+labels (step 5). This reduces ~83s sequential reads to ~6s for 12 emails.
 
-1. **Read email** with `read_email` MCP tool
-   - Get thread ID, message ID, sender, subject, snippet, body
-   - If thread has multiple messages, read up to 3 most recent for context
+### Step 1: Parallel Read All Emails
 
-2. **Check blacklist** from `config/contacts.yml`
-   - If sender email matches any glob pattern in `blacklist` section
-   - Force classify as `fyi` (no drafts for these senders)
-   - Skip to step 4
+**CRITICAL:** Make ONE message with parallel `read_email` tool calls for all message IDs.
 
-3. **Classify based on content**
-   - Analyze subject, snippet, and full body
-   - Apply classification signals (see below)
-   - Determine confidence level
+- Get thread ID, message ID, sender, subject, snippet, body for each email
+- If thread has multiple messages, read up to 3 most recent for context
+- Store all email data in memory for batch processing
+- **Do NOT read emails sequentially** — always use parallel tool calls
 
-4. **Determine communication style** (for needs_response only)
-   - Check `config/contacts.yml` domain_overrides
-   - Match sender's email domain against patterns
-   - Default to `business`
+### Step 2: Check Blacklist
 
-5. **Apply Gmail label** via `modify_email`
-   - Add appropriate label from table below
+After all reads complete, for each email:
 
-6. **Store in database**
-   - INSERT OR REPLACE into `emails` table with classification
+- Check `config/contacts.yml` blacklist section
+- If sender email matches any glob pattern, mark as `classification=fyi, confidence=high`
+- These skip classification logic in step 3
 
-7. **Log event**
-   - INSERT into `email_events` table for audit trail
+### Step 3: Batch Classify All Emails
+
+For each non-blacklisted email, analyze content and assign to ONE category:
+
+- Analyze subject, snippet, and full body
+- Apply classification signals (see below)
+- Determine confidence level
+- Group results by classification for batch processing
+
+### Step 4: Determine Communication Style
+
+For `needs_response` emails only:
+
+- Check `config/contacts.yml` domain_overrides
+- Match sender's email domain against patterns
+- Default to `business`
+
+### Step 5: Batch Apply Gmail Labels
+
+**CRITICAL:** Use `batch_modify_emails`, NOT individual `modify_email` calls.
+
+- Group message IDs by classification type
+- Make ONE `batch_modify_emails` call per classification:
+  - needs_response: `batch_modify_emails(message_ids, addLabelIds=["Label_34"])`
+  - action_required: `batch_modify_emails(message_ids, addLabelIds=["Label_37"])`
+  - payment_request: `batch_modify_emails(message_ids, addLabelIds=["Label_38"])`
+  - fyi: `batch_modify_emails(message_ids, addLabelIds=["Label_39"])`
+  - waiting: `batch_modify_emails(message_ids, addLabelIds=["Label_40"])`
+
+### Step 6: Store in Database
+
+- INSERT OR REPLACE into `emails` table with classification for each email
+- Use individual inserts or a transaction (transactions are 93x faster but optional)
+
+### Step 7: Log Events
+
+- INSERT into `email_events` table for audit trail for each classification
 
 ## Classification Signals
 

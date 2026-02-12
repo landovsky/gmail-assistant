@@ -74,6 +74,10 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
 
 ### Phase B: Classify new emails
 
+**PERFORMANCE OPTIMIZATION:** Phase B uses parallel processing to minimize latency.
+Read all emails in parallel (step 6), then batch-classify (step 7), then batch-apply
+labels (step 8). This reduces ~83s sequential reads to ~6s parallel reads for 12 emails.
+
 5. Search Gmail for emails matching: `in:inbox newer_than:30d -label:🤖 AI/Needs Response -label:🤖 AI/Outbox -label:🤖 AI/Rework -label:🤖 AI/Action Required -label:🤖 AI/Payment Requests -label:🤖 AI/FYI -label:🤖 AI/Waiting -label:🤖 AI/Done -in:trash -in:spam`
    Use `search_emails` with maxResults of 20.
    Also include any threads surfaced by Phase A step 3.
@@ -82,27 +86,41 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
    The user may override this in conversation (e.g. "triage emails from the past 7 days"
    or "triage all emails with no date limit"). Adjust the search query accordingly.
 
-6. For each email/thread:
-   - Read the email content using `read_email`
-   - If the thread has multiple messages, read the most recent ones (up to 3) for context
-   - **Blacklist check:** Read `config/contacts.yml` and check the `blacklist` list.
-     If the sender email matches any blacklist pattern (glob-style, `*` matches
-     any characters), force-classify as `fyi` and skip to step 8. Do not run
-     the classification logic below.
+6. **Read all emails in parallel** (PERFORMANCE CRITICAL):
+   - Make a single message with **parallel `read_email` tool calls** for all message IDs from step 5
+   - For threads with multiple messages, read up to 3 most recent for context
+   - **Do NOT read emails sequentially** — always use parallel tool calls in one message
+   - Store all email data in memory for batch processing in step 7
+   - Extract thread_id, message_id, sender_email, sender_name, subject, snippet, body, received_at
 
-7. Classify each thread into exactly ONE category:
+6b. **Blacklist filtering** (after parallel reads complete):
+   - Load `config/contacts.yml` and parse the `blacklist` section
+   - For each email, check if sender_email matches any blacklist pattern
+     (glob-style: `*` matches any characters, case-insensitive)
+   - Mark matching emails as `classification=fyi, confidence=high, reasoning="blacklisted"`
+   - These will skip classification logic in step 7
+
+7. **Batch classify all emails** (in-memory, no tool calls):
+   For each email (excluding blacklisted ones from step 6b), analyze the content
+   and assign to exactly ONE category:
    - **needs_response** — Someone is asking me a direct question, requesting something, or the social context requires a reply
    - **action_required** — I need to do something outside of email (sign a document, attend a meeting, approve something)
    - **payment_request** — Contains a payment request, invoice, or billing statement
    - **fyi** — Newsletter, notification, automated message, CC'd thread where I'm not directly addressed
    - **waiting** — I sent the last message in this thread and am awaiting a reply
 
-8. For each classified thread, apply the corresponding label via `modify_email`:
-   - needs_response → addLabelIds: ["Label_34"]
-   - action_required → addLabelIds: ["Label_37"]
-   - payment_request → addLabelIds: ["Label_38"]
-   - fyi → addLabelIds: ["Label_39"]
-   - waiting → addLabelIds: ["Label_40"]
+   Group the results by classification for batch processing in step 8.
+
+8. **Batch apply labels using `batch_modify_emails`** (PERFORMANCE CRITICAL):
+   - **Do NOT call `modify_email` individually** for each email
+   - Instead, group message IDs by classification type
+   - Make ONE `batch_modify_emails` call per classification group:
+     - needs_response: `batch_modify_emails(message_ids, addLabelIds=["Label_34"])`
+     - action_required: `batch_modify_emails(message_ids, addLabelIds=["Label_37"])`
+     - payment_request: `batch_modify_emails(message_ids, addLabelIds=["Label_38"])`
+     - fyi: `batch_modify_emails(message_ids, addLabelIds=["Label_39"])`
+     - waiting: `batch_modify_emails(message_ids, addLabelIds=["Label_40"])`
+   - This reduces 12 individual API calls (~24s) to ~5 batch calls (~10s)
 
 9. Store in local DB via sqlite3:
    ```
