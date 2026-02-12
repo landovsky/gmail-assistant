@@ -1,0 +1,9 @@
+#!/bin/bash
+# bin/rework
+# Process rework requests (drafts labeled 🤖 AI/Rework).
+# Run this after adding feedback on mobile.
+
+set -uo pipefail
+source "$(dirname "$0")/common.sh"
+
+run_step "Rework Drafts" sonnet rework-draft "$GMAIL_READ $GMAIL_WRITE $GMAIL_DRAFT $LOCAL_TOOLS"
