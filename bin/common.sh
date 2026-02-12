@@ -22,8 +22,7 @@ run_step() {
 
     claude --model "$model" \
         -p "/$command" \
-        --allowedTools $tools \
-        --max-budget-usd 1.00
+        --allowedTools $tools
 
     local exit_code=$?
     if [[ $exit_code -ne 0 ]]; then

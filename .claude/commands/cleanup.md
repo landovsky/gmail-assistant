@@ -32,12 +32,13 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
    multiple messages each carrying different `🤖 AI/*` labels. You must strip labels
    from ALL messages in the thread, not just the one returned by the search.
    For each message found:
-   - Get its Thread ID from `read_email`
-   - Collect ALL message IDs you've already seen for this thread (from this search
-     and from additional searches below). Skip threads you've already processed.
-   - Search for any other messages in the same thread that carry AI labels:
-     `thread:<thread_id>` (or use the subject to find related messages).
-   - Call `batch_modify_emails` with ALL message IDs from the thread, with
+   - Call `read_email` to get its Thread ID and Subject. Skip if this thread was already processed.
+   - Search for other messages in the same thread by subject:
+     `subject:"<exact subject>"`. Read each result and keep only those whose
+     Thread ID matches. This finds messages that carry AI labels on different
+     messages within the same thread.
+   - Call `batch_modify_emails` with ALL message IDs from the thread (the original
+     Done message plus any found via subject search), with
      `removeLabelIds: ["Label_34", "Label_35", "Label_36", "Label_37", "Label_38", "Label_39", "Label_40", "INBOX"]`.
      Keep Label_41 (Done) as permanent audit marker.
    - Update local DB: `UPDATE emails SET status='archived', acted_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE gmail_thread_id='...'`
