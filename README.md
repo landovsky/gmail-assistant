@@ -10,7 +10,7 @@ The system never sends or deletes email. It only reads, labels, and creates draf
   - [Automatic inbox triage](#automatic-inbox-triage) — implemented
   - [Review and send an AI draft](#review-and-send-an-ai-draft) — implemented
   - [Revise a draft](#revise-a-draft) — implemented
-  - [Manually request a draft](#manually-request-a-draft) — planned
+  - [Manually request a draft](#manually-request-a-draft) — implemented
   - [Mark an email as done](#mark-an-email-as-done) — implemented
   - [Detect payment requests](#detect-payment-requests) — implemented
   - [Get a morning briefing](#get-a-morning-briefing) — planned
@@ -71,7 +71,7 @@ bin/rework    # process pending rework requests
 ```
 
 ### Manually request a draft
-> **Status:** Planned
+> **Status:** Implemented
 
 For emails the system didn't auto-classify as needing a response, or when you want to provide specific instructions upfront:
 

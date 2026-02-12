@@ -59,9 +59,22 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
    Remove `🤖 AI/Waiting` label and include this thread in Phase B classification.
    Update the message_count in DB.
 
+4. **Manual label backfill.** Search Gmail for `label:🤖 AI/Needs Response newer_than:30d`.
+   For each result:
+   - Call `read_email` to get the Thread ID, sender, subject, etc.
+   - Check the local DB: `SELECT 1 FROM emails WHERE gmail_thread_id = '...'`
+   - If the thread already exists in DB, skip it.
+   - If NOT in DB: determine `resolved_style` from `config/contacts.yml` (same logic as step 10),
+     then insert a new record:
+     ```sql
+     INSERT OR IGNORE INTO emails (gmail_thread_id, gmail_message_id, sender_email, sender_name, subject, snippet, received_at, classification, confidence, reasoning, detected_language, resolved_style, message_count, status, processed_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'needs_response', 'high', 'Manually labeled by user', ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+     ```
+   - Log: `INSERT INTO email_events (gmail_thread_id, event_type, detail) VALUES (?, 'classified', 'Manual label backfill: user applied 🤖 AI/Needs Response')`
+
 ### Phase B: Classify new emails
 
-4. Search Gmail for emails matching: `in:inbox newer_than:30d -label:🤖 AI/Needs Response -label:🤖 AI/Outbox -label:🤖 AI/Rework -label:🤖 AI/Action Required -label:🤖 AI/Payment Requests -label:🤖 AI/FYI -label:🤖 AI/Waiting -label:🤖 AI/Done -in:trash -in:spam`
+5. Search Gmail for emails matching: `in:inbox newer_than:30d -label:🤖 AI/Needs Response -label:🤖 AI/Outbox -label:🤖 AI/Rework -label:🤖 AI/Action Required -label:🤖 AI/Payment Requests -label:🤖 AI/FYI -label:🤖 AI/Waiting -label:🤖 AI/Done -in:trash -in:spam`
    Use `search_emails` with maxResults of 20.
    Also include any threads surfaced by Phase A step 3.
 
@@ -69,35 +82,35 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
    The user may override this in conversation (e.g. "triage emails from the past 7 days"
    or "triage all emails with no date limit"). Adjust the search query accordingly.
 
-5. For each email/thread:
+6. For each email/thread:
    - Read the email content using `read_email`
    - If the thread has multiple messages, read the most recent ones (up to 3) for context
    - **Blacklist check:** Read `config/contacts.yml` and check the `blacklist` list.
      If the sender email matches any blacklist pattern (glob-style, `*` matches
-     any characters), force-classify as `fyi` and skip to step 7. Do not run
+     any characters), force-classify as `fyi` and skip to step 8. Do not run
      the classification logic below.
 
-6. Classify each thread into exactly ONE category:
+7. Classify each thread into exactly ONE category:
    - **needs_response** — Someone is asking me a direct question, requesting something, or the social context requires a reply
    - **action_required** — I need to do something outside of email (sign a document, attend a meeting, approve something)
    - **payment_request** — Contains a payment request, invoice, or billing statement
    - **fyi** — Newsletter, notification, automated message, CC'd thread where I'm not directly addressed
    - **waiting** — I sent the last message in this thread and am awaiting a reply
 
-7. For each classified thread, apply the corresponding label via `modify_email`:
+8. For each classified thread, apply the corresponding label via `modify_email`:
    - needs_response → addLabelIds: ["Label_34"]
    - action_required → addLabelIds: ["Label_37"]
    - payment_request → addLabelIds: ["Label_38"]
    - fyi → addLabelIds: ["Label_39"]
    - waiting → addLabelIds: ["Label_40"]
 
-8. Store in local DB via sqlite3:
+9. Store in local DB via sqlite3:
    ```
    INSERT OR REPLACE INTO emails (gmail_thread_id, gmail_message_id, sender_email, sender_name, subject, snippet, received_at, classification, confidence, reasoning, detected_language, resolved_style, message_count, status, processed_at, updated_at)
    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
    ```
 
-9. For `needs_response` emails, determine the communication style:
+10. For `needs_response` emails, determine the communication style:
    - Read `config/contacts.yml` and check if sender_email has an override
    - Check domain_overrides for sender domain
    - Default to `business`

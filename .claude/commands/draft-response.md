@@ -25,13 +25,28 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
    WHERE classification = 'needs_response' AND status = 'pending'
    ```
 
-2. For each email:
+2. For each email, check for an existing user draft with instructions:
+   a. Search Gmail for `in:draft subject:"<subject>"` (use the email's subject).
+   b. If results found, read each draft and check if its body contains the `✂️` marker.
+   c. If a draft with the marker exists, extract the text **above** the marker as user instructions.
+      Store these instructions for use in step 3d.
+   d. After the AI draft is created (step 3f), trash the user's notes draft:
+      use `modify_email` on the user draft's message ID with `addLabelIds: ["TRASH"]`.
+      Log: `INSERT INTO email_events (gmail_thread_id, event_type, detail) VALUES (?, 'draft_trashed', 'Trashed user instruction draft after generating AI response')`
+   e. If no user draft found or no `✂️` marker, proceed normally (no user instructions).
+
+3. For each email:
    a. Read the full thread from Gmail MCP using `read_email` with the gmail_message_id.
    b. Load the communication style config from `config/communication_styles.yml`.
       Use the `resolved_style` from the DB (already determined by inbox-triage).
       For Phase 1, this will typically be `business`.
    c. Load style rules, examples, sign_off, and language setting.
    d. Generate a draft reply following the style rules.
+      If user instructions were found in step 2, incorporate them into the draft.
+      Treat the instructions as high-level direction (e.g. "politely decline",
+      "suggest next month", "ask for more details"). The draft should still follow
+      the style config and sound natural — the instructions guide *what* to say,
+      not *how* to say it.
    e. Prepend the rework marker to the draft body. Format:
       two blank lines, then `✂️` on its own line, then blank line,
       then the draft. This gives the user space to tap and type above the marker.
