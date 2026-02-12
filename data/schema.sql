@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS emails (
     classification TEXT NOT NULL
         CHECK (classification IN (
             'needs_response', 'action_required',
-            'invoice', 'fyi', 'waiting'
+            'payment_request', 'fyi', 'waiting'
         )),
     confidence TEXT DEFAULT 'medium'
         CHECK (confidence IN ('high', 'medium', 'low')),
@@ -33,14 +33,8 @@ CREATE TABLE IF NOT EXISTS emails (
     rework_count INTEGER DEFAULT 0,
     last_rework_instruction TEXT,
 
-    -- Invoice fields (nullable, only for classification=invoice)
-    invoice_number TEXT,
-    invoice_amount REAL,
-    invoice_currency TEXT DEFAULT 'CZK',
-    invoice_due_date DATE,
-    variable_symbol TEXT,
+    -- Payment request fields (nullable, only for classification=payment_request)
     vendor_name TEXT,
-    fakturoid_expense_id INTEGER,
 
     -- Timestamps
     processed_at DATETIME DEFAULT CURRENT_TIMESTAMP,

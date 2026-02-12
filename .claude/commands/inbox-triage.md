@@ -9,7 +9,7 @@ Load label IDs from `config/label_ids.yml`:
 - outbox: Label_35
 - rework: Label_36
 - action_required: Label_37
-- invoice: Label_38
+- payment_request: Label_38
 - fyi: Label_39
 - waiting: Label_40
 - done: Label_41
@@ -61,7 +61,7 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
 
 ### Phase B: Classify new emails
 
-4. Search Gmail for emails matching: `in:inbox newer_than:30d -label:🤖 AI/Needs Response -label:🤖 AI/Outbox -label:🤖 AI/Rework -label:🤖 AI/Action Required -label:🤖 AI/Invoice -label:🤖 AI/FYI -label:🤖 AI/Waiting -label:🤖 AI/Done -in:trash -in:spam`
+4. Search Gmail for emails matching: `in:inbox newer_than:30d -label:🤖 AI/Needs Response -label:🤖 AI/Outbox -label:🤖 AI/Rework -label:🤖 AI/Action Required -label:🤖 AI/Payment Requests -label:🤖 AI/FYI -label:🤖 AI/Waiting -label:🤖 AI/Done -in:trash -in:spam`
    Use `search_emails` with maxResults of 20.
    Also include any threads surfaced by Phase A step 3.
 
@@ -80,14 +80,14 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
 6. Classify each thread into exactly ONE category:
    - **needs_response** — Someone is asking me a direct question, requesting something, or the social context requires a reply
    - **action_required** — I need to do something outside of email (sign a document, attend a meeting, approve something)
-   - **invoice** — Contains a payment request, invoice, or billing statement
+   - **payment_request** — Contains a payment request, invoice, or billing statement
    - **fyi** — Newsletter, notification, automated message, CC'd thread where I'm not directly addressed
    - **waiting** — I sent the last message in this thread and am awaiting a reply
 
 7. For each classified thread, apply the corresponding label via `modify_email`:
    - needs_response → addLabelIds: ["Label_34"]
    - action_required → addLabelIds: ["Label_37"]
-   - invoice → addLabelIds: ["Label_38"]
+   - payment_request → addLabelIds: ["Label_38"]
    - fyi → addLabelIds: ["Label_39"]
    - waiting → addLabelIds: ["Label_40"]
 
@@ -107,7 +107,7 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
 
 - Direct question addressed to me → needs_response
 - "Please confirm / approve / sign" → action_required
-- Attachment named *faktura*, *invoice*, amount + due date → invoice
+- Attachment named *faktura*, *invoice*, amount + due date → payment_request
 - Automated sender, no-reply address, marketing, newsletter → fyi
 - I sent the last message, no new reply from others → waiting
 - When uncertain between needs_response and fyi, prefer needs_response
@@ -121,7 +121,7 @@ After processing all emails, print a JSON summary:
   "processed": 12,
   "needs_response": 3,
   "action_required": 1,
-  "invoice": 2,
+  "payment_request": 2,
   "fyi": 5,
   "waiting": 1,
   "archived": 2,

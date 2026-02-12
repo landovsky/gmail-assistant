@@ -10,7 +10,7 @@ Load label IDs from `config/label_ids.yml`:
 - outbox: Label_35
 - rework: Label_36
 - action_required: Label_37
-- invoice: Label_38
+- payment_request: Label_38
 - fyi: Label_39
 - waiting: Label_40
 - done: Label_41

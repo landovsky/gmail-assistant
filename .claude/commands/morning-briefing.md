@@ -16,7 +16,7 @@ SQLite at `data/inbox.db`. Query via Bash: `sqlite3 data/inbox.db "SELECT ..."`
 2. Generate an HTML file at `data/dashboard.html` with:
 
 ### Summary section
-- Counts by category (needs_response, drafted/outbox, rework_requested, action_required, invoice, fyi, waiting)
+- Counts by category (needs_response, drafted/outbox, rework_requested, action_required, payment_request, fyi, waiting)
 - Total active items
 
 ### Action queue
@@ -25,8 +25,8 @@ For each item with status `drafted` or classification `action_required`, show a 
 - Classification + one-line reasoning
 - Direct link to Gmail thread: `https://mail.google.com/mail/u/0/#inbox/<gmail_message_id>`
 
-### Invoice tracker
-Table: Vendor, Amount, Due date, Invoice #, Variable symbol
+### Payment requests
+Table of emails classified as `payment_request`: Subject, Sender, Date, Status
 
 ### Waiting for
 List of threads with classification `waiting`, showing days elapsed since processed_at.

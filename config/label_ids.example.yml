@@ -6,7 +6,7 @@ needs_response: Label_XXXX   # 🤖 AI/Needs Response
 outbox: Label_XXXX           # 🤖 AI/Outbox
 rework: Label_XXXX           # 🤖 AI/Rework
 action_required: Label_XXXX  # 🤖 AI/Action Required
-invoice: Label_XXXX          # 🤖 AI/Invoice
+payment_request: Label_XXXX  # 🤖 AI/Payment Requests
 fyi: Label_XXXX              # 🤖 AI/FYI
 waiting: Label_XXXX          # 🤖 AI/Waiting
 done: Label_XXXX             # 🤖 AI/Done

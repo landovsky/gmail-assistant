@@ -1,6 +1,6 @@
 # Gmail Assistant
 
-A self-hosted, AI-powered email inbox manager built on [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Gmail MCP](https://www.npmjs.com/package/@gongrzhe/server-gmail-autoauth-mcp). It classifies incoming email, generates draft replies, extracts invoice data, and surfaces everything through Gmail labels you can act on from your phone.
+A self-hosted, AI-powered email inbox manager built on [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Gmail MCP](https://www.npmjs.com/package/@gongrzhe/server-gmail-autoauth-mcp). It classifies incoming email, generates draft replies, and surfaces everything through Gmail labels you can act on from your phone.
 
 The system never sends or deletes email. It only reads, labels, and creates drafts.
 
@@ -12,7 +12,7 @@ The system never sends or deletes email. It only reads, labels, and creates draf
   - [Revise a draft](#revise-a-draft) — implemented
   - [Manually request a draft](#manually-request-a-draft) — planned
   - [Mark an email as done](#mark-an-email-as-done) — implemented
-  - [Track invoices](#track-invoices) — implemented
+  - [Detect payment requests](#detect-payment-requests) — implemented
   - [Get a morning briefing](#get-a-morning-briefing) — implemented
   - [Customize communication style](#customize-communication-style) — implemented
 - [Setup](#setup)
@@ -32,7 +32,7 @@ Every 30 minutes (or on demand), the pipeline scans your inbox and classifies ea
 |----------|-------|---------|
 | Needs Response | `🤖 AI/Needs Response` | Someone is asking you a direct question or expects a reply |
 | Action Required | `🤖 AI/Action Required` | You need to do something outside email (sign, approve, attend) |
-| Invoice | `🤖 AI/Invoice` | Contains a payment request or bill |
+| Payment Request | `🤖 AI/Payment Requests` | Contains a payment request or bill |
 | FYI | `🤖 AI/FYI` | Notification, newsletter, no action needed |
 | Waiting | `🤖 AI/Waiting` | You sent the last message, awaiting a reply |
 
@@ -40,7 +40,7 @@ When someone replies to a Waiting thread, the system detects the new message and
 
 ```bash
 bin/process-inbox triage    # run manually
-bin/process-inbox all       # full pipeline (triage + draft + invoices)
+bin/process-inbox all       # full pipeline (triage + draft)
 ```
 
 ### Review and send an AI draft
@@ -96,19 +96,15 @@ The `🤖 AI/Done` label is kept permanently as an audit trail marker.
 bin/cleanup    # run cleanup manually
 ```
 
-### Track invoices
+### Detect payment requests
 > **Status:** Implemented
 
-Emails classified as `Invoice` get structured data extracted automatically: vendor name, invoice number, amount, currency, due date, and variable symbol (for Czech payments).
-
-```bash
-bin/process-inbox invoices
-```
+Emails containing payment requests, invoices, or billing statements are automatically detected during triage and labeled `🤖 AI/Payment Requests`. No further processing is done — the label surfaces them for your attention.
 
 ### Get a morning briefing
 > **Status:** Implemented
 
-Generates a local HTML dashboard summarizing your inbox state: action queue, pending drafts, invoice tracker, and waiting threads.
+Generates a local HTML dashboard summarizing your inbox state: action queue, pending drafts, payment requests, and waiting threads.
 
 ```bash
 claude -p /morning-briefing
@@ -158,7 +154,7 @@ Create these nested labels in Gmail (Settings > Labels > Create new):
 🤖 AI/Outbox
 🤖 AI/Rework
 🤖 AI/Action Required
-🤖 AI/Invoice
+🤖 AI/Payment Requests
 🤖 AI/FYI
 🤖 AI/Waiting
 🤖 AI/Done
@@ -231,7 +227,6 @@ Defines three response styles — **formal**, **business** (default), **informal
 |---------|--------|---------|
 | `/inbox-triage` | `bin/process-inbox triage` | Classify new emails |
 | `/draft-response` | `bin/process-inbox draft` | Generate reply drafts |
-| `/process-invoices` | `bin/process-inbox invoices` | Extract invoice data |
 | `/cleanup` | `bin/cleanup` | Archive Done threads, detect sent drafts |
 | `/rework-draft` | `bin/rework` | Process draft feedback |
 | `/morning-briefing` | — | Generate HTML dashboard summary |
@@ -252,12 +247,12 @@ GMA_LOG_LEVEL=debug bin/process-inbox all    # debug, info (default), warn, erro
 │                 Background Processor                  │
 │             (Claude Code custom commands)             │
 │                                                      │
-│  ┌──────────┐  ┌────────────┐  ┌──────────────────┐ │
-│  │  Triage   │→│   Draft     │→│ Invoice Processing│ │
-│  │  (Haiku)  │ │  (Sonnet)   │ │     (Haiku)       │ │
-│  └──────────┘  └────────────┘  └──────────────────┘ │
-│       │              │                  │             │
-│       ▼              ▼                  ▼             │
+│  ┌──────────────────┐  ┌────────────────────────┐   │
+│  │  Triage           │→│   Draft Responses       │   │
+│  │  (Haiku)          │ │   (Sonnet)              │   │
+│  └──────────────────┘  └────────────────────────┘   │
+│       │                       │                      │
+│       ▼                       ▼                      │
 │  ┌──────────────────────────────────────────────────┐│
 │  │             Local SQLite Database                 ││
 │  └──────────────────────────────────────────────────┘│
