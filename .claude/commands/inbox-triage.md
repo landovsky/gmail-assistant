@@ -64,6 +64,10 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
 5. For each email/thread:
    - Read the email content using `read_email`
    - If the thread has multiple messages, read the most recent ones (up to 3) for context
+   - **Blacklist check:** Read `config/contacts.yml` and check the `blacklist` list.
+     If the sender email matches any blacklist pattern (glob-style, `*` matches
+     any characters), force-classify as `fyi` and skip to step 7. Do not run
+     the classification logic below.
 
 6. Classify each thread into exactly ONE category:
    - **needs_response** — Someone is asking me a direct question, requesting something, or the social context requires a reply

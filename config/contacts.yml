@@ -15,3 +15,10 @@ domain_overrides:
 # Language overrides (when auto-detection isn't enough)
 language_overrides:
   "english-client@abroad.com": en
+
+# Blacklist — always classify as FYI, never draft a response.
+# Supports glob patterns (* matches any characters).
+blacklist:
+  - "visitor*.messages@email.dostupnost-leku.cz"
+  - "*@noreply.github.com"
+  - "*@notifications.google.com"
