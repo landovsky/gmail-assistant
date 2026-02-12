@@ -11,7 +11,15 @@ LOCAL_TOOLS="Bash Read Glob Grep"
 
 # --- Logging ---
 # GMA_LOG_LEVEL: debug | info (default) | warn | error
+# GMA_LOG_FILE: override log file path (default: logs/<script-name>.log)
 GMA_LOG_LEVEL="${GMA_LOG_LEVEL:-info}"
+
+LOG_DIR="$(pwd)/logs"
+mkdir -p "$LOG_DIR"
+
+# Default log file based on the calling script name (e.g. process-inbox → logs/process-inbox.log)
+_caller_name=$(basename "${BASH_SOURCE[${#BASH_SOURCE[@]}-1]}" 2>/dev/null || echo "gma")
+GMA_LOG_FILE="${GMA_LOG_FILE:-${LOG_DIR}/${_caller_name}.log}"
 
 _log_level_num() {
     case "$1" in
@@ -29,7 +37,9 @@ _log() {
 
     local tag
     tag=$(printf "%-5s" "$level" | tr '[:lower:]' '[:upper:]')
-    echo "[$( date "+%Y-%m-%d %H:%M:%S" )] ${tag} $*"
+    local line="[$( date "+%Y-%m-%d %H:%M:%S" )] ${tag} $*"
+    echo "$line"
+    echo "$line" >> "$GMA_LOG_FILE"
 }
 
 log_debug() { _log debug "$@"; }
