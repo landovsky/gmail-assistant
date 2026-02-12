@@ -10,6 +10,11 @@ Extract structured data from emails labeled `🤖 AI/Invoice`.
 
 SQLite at `data/inbox.db`. Query via Bash: `sqlite3 data/inbox.db "SELECT ..."`
 
+**Audit logging:** Every action must be logged to the `email_events` table:
+```sql
+INSERT INTO email_events (gmail_thread_id, event_type, detail) VALUES (?, ?, ?);
+```
+
 ## Steps
 
 1. Query the local DB for unprocessed invoices:
@@ -39,6 +44,11 @@ SQLite at `data/inbox.db`. Query via Bash: `sqlite3 data/inbox.db "SELECT ..."`
         variable_symbol = '...',
         updated_at = CURRENT_TIMESTAMP
       WHERE gmail_thread_id = '...'
+      ```
+   d. Log the extraction to the audit table:
+      ```sql
+      INSERT INTO email_events (gmail_thread_id, event_type, detail)
+      VALUES ('...', 'classified', 'Invoice extracted: vendor=..., amount=... ..., due=..., invoice#=...')
       ```
 
 ## Output

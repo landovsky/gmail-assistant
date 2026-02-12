@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inbox Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+        .timestamp {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .summary-card {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .summary-card .count {
+            font-size: 32px;
+            font-weight: bold;
+            color: #2563eb;
+            margin-bottom: 8px;
+        }
+        .summary-card .label {
+            font-size: 13px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        section {
+            margin-bottom: 32px;
+        }
+        h2 {
+            font-size: 20px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        
+        .card {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-left: 4px solid #2563eb;
+        }
+        .card.action {
+            border-left-color: #dc2626;
+        }
+        .card.waiting {
+            border-left-color: #f59e0b;
+        }
+        .card.fyi {
+            border-left-color: #6b7280;
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+        .card-title {
+            font-weight: 600;
+            font-size: 15px;
+        }
+        .card-meta {
+            font-size: 13px;
+            color: #666;
+        }
+        .card-from {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        .card-reasoning {
+            font-size: 13px;
+            background: #f9fafb;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-top: 8px;
+            color: #555;
+        }
+        .card-link {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: #2563eb;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .card-link:hover {
+            background: #1d4ed8;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th {
+            background: #f3f4f6;
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 14px;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        .empty {
+            text-align: center;
+            padding: 24px;
+            color: #999;
+            font-size: 14px;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 12px;
+            }
+            h1 {
+                font-size: 24px;
+            }
+            .summary {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            table {
+                font-size: 12px;
+            }
+            th, td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📧 Inbox Dashboard</h1>
+            <p class="timestamp">Generated: 2026-02-12 14:26:13</p>
+        </header>
+        
+        <section>
+            <h2>Summary</h2>
+            <div class="summary">
+                <div class="summary-card">
+                    <div class="count">119</div>
+                    <div class="label">Total Active</div>
+                </div>
+                <div class="summary-card">
+                    <div class="count">3</div>
+                    <div class="label">Drafted</div>
+                </div>
+                <div class="summary-card">
+                    <div class="count">11</div>
+                    <div class="label">Action Required</div>
+                </div>
+                <div class="summary-card">
+                    <div class="count">3</div>
+                    <div class="label">Needs Response</div>
+                </div>
+                <div class="summary-card">
+                    <div class="count">0</div>
+                    <div class="label">Invoices</div>
+                </div>
+                <div class="summary-card">
+                    <div class="count">0</div>
+                    <div class="label">Waiting For</div>
+                </div>
+            </div>
+        </section>
+<section>
+<h2>⚡ Action Queue</h2>
+    <div class="card needs_response">
+        <div class="card-header">
+            <div class="card-title">problémy v Dubu</div>
+            <div class="card-meta">2026-02-11</div>
+        </div>
+        <div class="card-from">From: <strong>Martina Zielinská</strong></div>
+        <div class="card-reasoning">Colleague reporting specific Dub system numbering issues, needs acknowledgment and fix</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c4cd382440ce1f" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card needs_response">
+        <div class="card-header">
+            <div class="card-title">Re: Lék Tezeo 80mg momentálně není dostupný v žádné lékárně v Plzeňském kraji. (#b3a)</div>
+            <div class="card-meta">unknown</div>
+        </div>
+        <div class="card-from">From: <strong>visitor1053281</strong></div>
+        <div class="card-reasoning">Customer asking about medication availability on Dostupnost-leku.cz</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c51c65989bfbbb" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card needs_response">
+        <div class="card-header">
+            <div class="card-title">Re: Dobrý den, paní Hurtová, bohužel lék Tezeo 80mg není aktuálně dostupný v Plze... (#b3a)</div>
+            <div class="card-meta">unknown</div>
+        </div>
+        <div class="card-from">From: <strong>Jarmilahurt</strong></div>
+        <div class="card-reasoning">Customer asking about medication availability on Dostupnost-leku.cz</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c51c96d5104a76" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">ADMIN: chybí rozdílové importy</div>
+            <div class="card-meta">2026-02-12</div>
+        </div>
+        <div class="card-from">From: <strong>Dostupnost-leku.cz</strong></div>
+        <div class="card-reasoning">System alert: missing diff imports</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c51f2c6a92c4f2" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">ADMIN: chybí rozdílové importy</div>
+            <div class="card-meta">2026-02-10</div>
+        </div>
+        <div class="card-from">From: <strong>Dostupnost-leku.cz</strong></div>
+        <div class="card-reasoning">System alert: missing diff imports</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c481421d39963a" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">€21.18 payment to Cursor was unsuccessful again</div>
+            <div class="card-meta">2026-02-12</div>
+        </div>
+        <div class="card-from">From: <strong>Cursor</strong></div>
+        <div class="card-reasoning">Second failed payment attempt for Cursor subscription, needs card update</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c51ea16ac9f4a9" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">[KRITISCH] Verwundbare n8n-Systeme in AS24940</div>
+            <div class="card-meta">2026-02-11</div>
+        </div>
+        <div class="card-from">From: <strong>Hetzner Abuse Team</strong></div>
+        <div class="card-reasoning">CRITICAL: n8n server has multiple critical vulnerabilities (CVE-2025-68613 etc.), needs immediate update</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c4c113c31ebdd6" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">Billing Alert: Monthly Usage Exceeded Threshold</div>
+            <div class="card-meta">2026-02-11</div>
+        </div>
+        <div class="card-from">From: <strong>DigitalOcean Support</strong></div>
+        <div class="card-reasoning">Billing alert - minor overage, review if expected</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c4bfa57acf7878" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">$24.20 payment to Cursor was unsuccessful</div>
+            <div class="card-meta">2026-02-11</div>
+        </div>
+        <div class="card-from">From: <strong>Cursor</strong></div>
+        <div class="card-reasoning">Payment failed, needs card update to continue subscription</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c4c98de316b7f5" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">[GitHub] Credit or debit card expiring soon</div>
+            <div class="card-meta">2026-02-12</div>
+        </div>
+        <div class="card-from">From: <strong>GitHub</strong></div>
+        <div class="card-reasoning">Credit card expiring, needs update in GitHub billing</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c50522b88bb3b2" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">ADMIN: chybí denní importy</div>
+            <div class="card-meta">2026-02-11</div>
+        </div>
+        <div class="card-from">From: <strong>Dostupnost-leku.cz</strong></div>
+        <div class="card-reasoning">System alert: 8 pharmacies missing daily imports, needs investigation</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c4ef962a52aca9" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">ADMIN: chybí rozdílové importy</div>
+            <div class="card-meta">2026-02-11</div>
+        </div>
+        <div class="card-from">From: <strong>Dostupnost-leku.cz</strong></div>
+        <div class="card-reasoning">System alert: 1 pharmacy missing diff imports</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c4b4bd54a3d056" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">Required migration to new DNS management on Hetzner Console</div>
+            <div class="card-meta">unknown</div>
+        </div>
+        <div class="card-from">From: <strong>Hetzner</strong></div>
+        <div class="card-reasoning">Must migrate DNS zones before May 2026</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c5155df1911920" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+    <div class="card action_required">
+        <div class="card-header">
+            <div class="card-title">ADMIN: chybí rozdílové importy</div>
+            <div class="card-meta">unknown</div>
+        </div>
+        <div class="card-from">From: <strong>Dostupnost-leku.cz</strong></div>
+        <div class="card-reasoning">System admin alert — pharmacy missing differential imports</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19c50724531631f0" class="card-link" target="_blank">Open in Gmail</a>
+    </div>
+</section>
+    </div>
+</body>
+</html>

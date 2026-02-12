@@ -1,31 +1,102 @@
 #!/bin/bash
 # bin/process-inbox
 # Runs the full inbox processing pipeline.
-# Model routing: pass --model explicitly because command-level
-# model frontmatter has a known bug (anthropics/claude-code#13535).
+#
+# Each step invokes a custom command via `claude -p "/command-name"`.
+# --allowedTools whitelists only the tools each step needs — notably
+# excluding send_email and delete_email to enforce the spec's safety
+# guarantees.
+#
+# Usage:
+#   bin/process-inbox           # Run full pipeline
+#   bin/process-inbox triage    # Run only inbox-triage
+#   bin/process-inbox draft     # Run only draft-response
+#   bin/process-inbox rework    # Run only rework-draft
+#   bin/process-inbox invoices  # Run only process-invoices
+#   bin/process-inbox briefing  # Run only morning-briefing
 
-set -euo pipefail
+set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
-echo "=== Inbox Triage ==="
-claude --model haiku --command inbox-triage --print
+# Tools shared across all steps (never includes send_email or delete_email)
+GMAIL_READ="mcp__gmail__search_emails mcp__gmail__read_email"
+GMAIL_WRITE="mcp__gmail__modify_email mcp__gmail__batch_modify_emails"
+GMAIL_DRAFT="mcp__gmail__draft_email"
+LOCAL_TOOLS="Bash Read Glob Grep"
 
-echo ""
-echo "=== Draft Responses ==="
-claude --model sonnet --command draft-response --print
+timestamp() { date "+%Y-%m-%d %H:%M:%S"; }
 
-echo ""
-echo "=== Rework Drafts ==="
-claude --model sonnet --command rework-draft --print
+run_step() {
+    local name="$1"
+    local model="$2"
+    local command="$3"
+    local tools="$4"
 
-echo ""
-echo "=== Process Invoices ==="
-claude --model haiku --command process-invoices --print
+    echo ""
+    echo "=== [$( timestamp )] $name ==="
 
-echo ""
-echo "=== Generate Dashboard ==="
-claude --model haiku --command morning-briefing --print
+    claude --model "$model" \
+        -p "/$command" \
+        --allowedTools $tools \
+        --max-budget-usd 1.00
 
-echo ""
-echo "=== Done ==="
+    local exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        echo "WARNING: $name exited with code $exit_code"
+    fi
+    return $exit_code
+}
+
+# Define steps
+run_triage() {
+    run_step "Inbox Triage" haiku \
+        inbox-triage \
+        "$GMAIL_READ $GMAIL_WRITE $LOCAL_TOOLS"
+}
+
+run_draft() {
+    run_step "Draft Responses" sonnet \
+        draft-response \
+        "$GMAIL_READ $GMAIL_WRITE $GMAIL_DRAFT $LOCAL_TOOLS"
+}
+
+run_rework() {
+    run_step "Rework Drafts" sonnet \
+        rework-draft \
+        "$GMAIL_READ $GMAIL_WRITE $GMAIL_DRAFT $LOCAL_TOOLS"
+}
+
+run_invoices() {
+    run_step "Process Invoices" haiku \
+        process-invoices \
+        "$GMAIL_READ $LOCAL_TOOLS"
+}
+
+run_briefing() {
+    run_step "Morning Briefing" haiku \
+        morning-briefing \
+        "$LOCAL_TOOLS Write"
+}
+
+# Run specific step or full pipeline
+case "${1:-all}" in
+    triage)   run_triage ;;
+    draft)    run_draft ;;
+    rework)   run_rework ;;
+    invoices) run_invoices ;;
+    briefing) run_briefing ;;
+    all)
+        run_triage
+        run_draft
+        run_rework
+        run_invoices
+        run_briefing
+        echo ""
+        echo "=== [$( timestamp )] Pipeline complete ==="
+        ;;
+    *)
+        echo "Usage: $0 [triage|draft|rework|invoices|briefing|all]"
+        exit 1
+        ;;
+esac
