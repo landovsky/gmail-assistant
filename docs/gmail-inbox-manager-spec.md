@@ -55,8 +55,8 @@ All system-managed labels are prefixed with `🤖/` to visually group them in Gm
 | `🤖/Action Required` | Processor | Non-email action needed (sign, pay, attend…) | Do the thing, then apply `🤖/Done` |
 | `🤖/Invoice` | Processor | Unpaid invoice detected | Pay or forward to accountant |
 | `🤖/FYI` | Processor | Informational, no action needed | Skim or archive at will |
-| `🤖/Waiting` | Processor | Awaiting someone else's reply | System sends periodic nudge reminders |
-| `🤖/Done` | **User** | Signals "I'm finished with this thread" | System archives, stops processing |
+| `🤖/Waiting` | Processor | Awaiting someone else's reply | System re-triages when reply arrives |
+| `🤖/Done` | **User** | Signals "I'm finished with this thread" | System archives, removes `🤖/*` labels, stops processing |
 
 ### Label Lifecycle
 
@@ -78,12 +78,18 @@ inbox-triage classifies
             ▼
         🤖/Outbox
             │
-            ├─→ User sends draft         → label removed, thread done
+            ├─→ User sends draft         → cleanup detects sent, removes label, DB → sent
             ├─→ User adds note, relabels → 🤖/Rework → rework-draft
             │                                  │
             │                                  ▼
             │                              Regenerated draft → 🤖/Outbox
+            │                              (max 3 reworks, then → 🤖/Action Required)
             └─→ User removes label        → interpreted as "skip, don't redraft"
+
+🤖/Done (user-applied on any thread)
+    │
+    ▼
+Cleanup: remove all 🤖/* labels, remove from INBOX, DB → archived
 ```
 
 ---
@@ -99,8 +105,9 @@ inbox-triage classifies
    - Reads the user's note (everything above the `---✂---` marker)
    - If the note references other emails (e.g. "see the April email"), searches Gmail via MCP for matching threads with that contact around the referenced time
    - Feeds the note + any retrieved context into `rework-draft` command
-   - Regenerates the draft
+   - Deletes the old draft and creates a new one on the same thread (Gmail MCP has no draft update — delete + recreate is the pattern)
    - Moves label back to `🤖/Outbox`
+   - If this is the 3rd rework (max), adds a warning to the draft and moves to `🤖/Action Required` instead
 
 ### Draft format
 
@@ -313,13 +320,35 @@ language_overrides:
 ```markdown
 # Inbox Triage
 
-Classify unprocessed emails and apply Gmail labels.
+Classify unprocessed emails, handle lifecycle transitions, and apply Gmail labels.
 
 ## Steps
 
-1. Use Gmail MCP to fetch emails that have no `🤖/*` labels and are not in Trash or Spam.
-2. For each email thread, read the full thread content.
-3. Classify into exactly ONE category:
+### Phase A: Cleanup & lifecycle transitions
+
+1. **🤖/Done cleanup.** Search for threads with `🤖/Done` label.
+   For each: remove all `🤖/*` labels, remove from INBOX (archive),
+   update local DB status to `archived`.
+
+2. **Sent draft detection.** For threads with `🤖/Outbox` label,
+   check if the stored `draft_id` in the local DB still exists as a
+   draft. If the draft was sent (no longer exists as draft, but a sent
+   message exists in the thread), remove `🤖/Outbox` label and update
+   DB status to `sent`.
+
+3. **🤖/Waiting re-triage.** Search for threads with `🤖/Waiting` label.
+   For each, check if new inbound messages (not from me) have arrived
+   since the label was applied. If yes, remove `🤖/Waiting` and
+   re-classify the thread in Phase B below.
+
+### Phase B: Classify new emails
+
+4. Use Gmail MCP to fetch emails that have no `🤖/*` labels and are
+   not in Trash or Spam. Include threads surfaced by Phase A step 3.
+5. For each email thread, read the full thread content via Gmail MCP.
+   (Note: `read_email` reads one message at a time — search for all
+   messages in the thread and read each.)
+6. Classify into exactly ONE category:
 
    - **needs_response** — Someone is asking me a direct question, requesting
      something, or the social context requires a reply
@@ -330,12 +359,12 @@ Classify unprocessed emails and apply Gmail labels.
      where I'm not directly addressed
    - **waiting** — I sent the last message in this thread and am awaiting a reply
 
-4. Apply the corresponding `🤖/*` label via Gmail MCP.
-5. Store the classification in the local SQLite database at `data/inbox.db`:
+7. Apply the corresponding `🤖/*` label via Gmail MCP.
+8. Store the classification in the local SQLite database at `data/inbox.db`:
    - gmail_thread_id, gmail_message_id, sender, subject
    - classification, confidence (high/medium/low), reasoning (one line)
    - detected_language, processed_at
-6. For `needs_response` emails, also store:
+9. For `needs_response` emails, also store:
    - resolved_style (using the style selection logic from config files)
    - Contact name and email for the draft-response command to pick up
 
@@ -357,7 +386,10 @@ Print a JSON summary:
   "action_required": 1,
   "invoice": 2,
   "fyi": 5,
-  "waiting": 1
+  "waiting": 1,
+  "archived": 2,
+  "sent_detected": 1,
+  "waiting_retriaged": 0
 }
 ```
 
@@ -414,25 +446,36 @@ Process user feedback on drafts labeled `🤖/Rework`.
 
 1. Use Gmail MCP to find threads with the `🤖/Rework` label.
 2. For each thread:
-   a. Fetch the current draft from the thread.
-   b. Extract user instructions: everything ABOVE the
+   a. Check rework_count in local DB. If rework_count >= 3, this
+      thread has exceeded the rework limit — move label to
+      `🤖/Action Required`, update DB status, and skip to next thread.
+   b. Fetch the current draft from the thread.
+   c. Extract user instructions: everything ABOVE the
       `---✂---` marker line in the draft body.
-   c. Parse the instructions for:
+   d. Parse the instructions for:
       - Style overrides ("informal tone", "formal please")
       - Context references ("the April email", "our last conversation")
       - Content directives ("say no", "add Tuesday meeting", "shorter")
       - Language switches ("in English", "česky")
-   d. If context is referenced:
+   e. If context is referenced:
       - Search Gmail MCP for matching threads
         (same sender, referenced time period, keywords)
       - Include relevant excerpts as context for regeneration
-   e. If a style override is requested, load that style config.
+   f. If a style override is requested, load that style config.
       Otherwise, use the original style.
-   f. Regenerate the draft with the user's instructions + any
+   g. Regenerate the draft with the user's instructions + any
       additional context.
-   g. Replace the draft body (keep the marker format).
-   h. Move the label from `🤖/Rework` back to `🤖/Outbox`.
-   i. Update the local DB: increment rework_count, log the instruction.
+   h. Delete the old draft via Gmail MCP, then create a new draft
+      as a reply on the same thread (Gmail MCP has no draft update
+      — delete + recreate is the pattern). Preserve the thread_id
+      and in_reply_to from the original draft.
+   i. If this is the 3rd rework (rework_count will become 3), prepend
+      a warning to the draft body above the marker:
+      `⚠️ This is the last automatic rework. Further changes must be made manually.`
+      And move the label to `🤖/Action Required` instead of `🤖/Outbox`.
+   j. Otherwise, move the label from `🤖/Rework` back to `🤖/Outbox`.
+   k. Update the local DB: increment rework_count, log the instruction,
+      store the new draft_id.
 
 ## Important
 
@@ -443,7 +486,8 @@ Process user feedback on drafts labeled `🤖/Rework`.
 
 ## Output
 
-Print a summary of reworked drafts with the instruction that was processed.
+Print a summary of reworked drafts with the instruction that was processed
+and current rework count.
 ```
 
 ### Command: `process-invoices.md`
@@ -532,21 +576,23 @@ A wrapper script or command that runs the pipeline in sequence:
 ```bash
 #!/bin/bash
 # bin/process-inbox
+# Model routing: pass --model explicitly because command-level
+# model frontmatter has a known bug (anthropics/claude-code#13535).
 
 echo "=== Inbox Triage ==="
-claude --command inbox-triage
+claude --model haiku --command inbox-triage
 
 echo "=== Draft Responses ==="
-claude --command draft-response
+claude --model sonnet --command draft-response
 
 echo "=== Rework Drafts ==="
-claude --command rework-draft
+claude --model sonnet --command rework-draft
 
 echo "=== Process Invoices ==="
-claude --command process-invoices
+claude --model haiku --command process-invoices
 
 echo "=== Generate Dashboard ==="
-claude --command morning-briefing
+claude --model haiku --command morning-briefing
 
 echo "=== Done ==="
 ```
@@ -590,10 +636,10 @@ For on-demand processing:
 bin/process-inbox
 
 # Run just triage + dashboard (quick check)
-claude --command inbox-triage && claude --command morning-briefing
+claude --model haiku --command inbox-triage && claude --model haiku --command morning-briefing
 
 # Rework only (after adding feedback on mobile)
-claude --command rework-draft
+claude --model sonnet --command rework-draft
 ```
 
 ---
@@ -624,6 +670,9 @@ CREATE TABLE IF NOT EXISTS emails (
     reasoning TEXT,
     detected_language TEXT DEFAULT 'cs',
     resolved_style TEXT DEFAULT 'business',
+
+    -- Thread tracking
+    message_count INTEGER DEFAULT 1,  -- track message count to detect new replies in 🤖/Waiting threads
 
     -- Draft tracking
     status TEXT DEFAULT 'pending'
@@ -695,8 +744,8 @@ gmail-inbox-manager/
 - **No duplicate labels.** Check existing labels on a thread before applying new ones.
 - **Thread-level keying.** All processing is keyed on `gmail_thread_id`, not individual message IDs. A thread is one unit of work.
 - **No automatic sending.** The system NEVER sends an email. It only creates drafts and applies labels. The user always sends manually.
-- **No destructive actions.** The system never deletes emails or removes user-applied labels. It only adds/moves `🤖/*` labels and creates/updates drafts.
-- **Rework is bounded.** After 3 rework cycles on the same thread, the system flags it for manual handling instead of regenerating.
+- **No destructive actions.** The system never deletes emails or removes user-applied labels. It only adds/moves `🤖/*` labels and creates/updates drafts. Draft deletion only occurs as part of the delete+recreate pattern during rework (the new draft replaces the old one on the same thread).
+- **Rework is bounded.** After 3 rework cycles on the same thread, the system adds a warning to the final draft and moves it to `🤖/Action Required` for manual handling. The `rework_count` is tracked in the local DB.
 
 ### Error handling
 
