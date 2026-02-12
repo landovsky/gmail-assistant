@@ -16,6 +16,7 @@ case "${1:-all}" in
     draft)    run_step "Draft Responses" sonnet draft-response "$GMAIL_READ $GMAIL_WRITE $GMAIL_DRAFT $LOCAL_TOOLS" ;;
     invoices) run_step "Process Invoices" haiku process-invoices "$GMAIL_READ $LOCAL_TOOLS" ;;
     all)
+        run_step "Cleanup & Lifecycle" sonnet cleanup "$GMAIL_READ $GMAIL_WRITE $LOCAL_TOOLS"
         run_step "Inbox Triage" haiku inbox-triage "$GMAIL_READ $GMAIL_WRITE $LOCAL_TOOLS"
         run_step "Draft Responses" sonnet draft-response "$GMAIL_READ $GMAIL_WRITE $GMAIL_DRAFT $LOCAL_TOOLS"
         run_step "Process Invoices" haiku process-invoices "$GMAIL_READ $LOCAL_TOOLS"

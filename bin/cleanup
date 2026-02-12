@@ -6,4 +6,4 @@
 set -uo pipefail
 source "$(dirname "$0")/common.sh"
 
-run_step "Cleanup & Lifecycle" haiku cleanup "$GMAIL_READ $GMAIL_WRITE $LOCAL_TOOLS"
+run_step "Cleanup & Lifecycle" sonnet cleanup "$GMAIL_READ $GMAIL_WRITE $LOCAL_TOOLS"
