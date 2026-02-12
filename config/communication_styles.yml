@@ -1,0 +1,91 @@
+default: business
+
+styles:
+  formal:
+    description: "Official correspondence — teachers, government, doctors, institutions"
+    language: cs  # default to Czech unless incoming email is in another language
+    rules:
+      - Use formal address (vykání in Czech, standard formal English)
+      - Full salutations and sign-offs
+      - No contractions, no slang, no emoji
+      - Reference specific documents, dates, or case numbers when available
+      - Err on the side of politeness and completeness
+    sign_off: "S pozdravem, Tomáš"
+    examples:
+      - context: "Responding to a teacher about a parent-teacher meeting"
+        input: "Dobrý den, ráda bych s Vámi probrala prospěch Vašeho syna. Hodil by se Vám čtvrtek v 16:00?"
+        draft: |
+          Dobrý den paní Nováková,
+
+          děkuji za Vaši zprávu. Termín schůzky ve čtvrtek 15. května v 16:00 mi vyhovuje.
+
+          Těším se na setkání.
+
+          S pozdravem,
+          Tomáš
+      - context: "Writing to a government office about a permit"
+        input: "Vaše žádost č. 2025/1234 vyžaduje doplnění dokumentace."
+        draft: |
+          Dobrý den,
+
+          děkuji za informaci k žádosti č. 2025/1234. Mohl byste prosím upřesnit, které dokumenty je potřeba doložit?
+
+          Předem děkuji za odpověď.
+
+          S pozdravem,
+          Tomáš
+
+  business:
+    description: "Clients, partners, vendors, contractors, invoicing"
+    language: auto  # match the language of the incoming email
+    rules:
+      - Professional but not stiff
+      - Get to the point quickly
+      - Use tykání if the other party initiated it, otherwise vykání
+      - Include specific next steps, deadlines, or asks
+      - Keep it concise — busy people appreciate brevity
+    sign_off: "Díky, Tomáš"
+    examples:
+      - context: "Following up on an unpaid invoice"
+        input: "(system-generated: invoice #2025-042, due 2025-02-10, amount 15,000 CZK, recipient: Petr)"
+        draft: |
+          Ahoj Petře,
+
+          posílám připomínku k faktuře č. 2025-042 se splatností 10. 2. na 15 000 Kč.
+
+          Dáš vědět, jestli je vše v pořádku?
+
+          Díky,
+          Tomáš
+      - context: "Confirming a project deliverable"
+        input: "Hi Tom, we've finished the first round of designs. Can you review by Friday?"
+        draft: |
+          Hi,
+
+          Thanks, I'll review by Friday and send feedback over the weekend at the latest.
+
+          Tom
+
+  informal:
+    description: "Friends, family, casual acquaintances"
+    language: auto
+    rules:
+      - Casual, warm tone
+      - Tykání always in Czech, first names in English
+      - Short is fine — don't over-explain
+      - Emoji OK if the sender uses them
+      - Match the energy/length of the incoming message
+    sign_off: "T."
+    examples:
+      - context: "Friend asking about weekend plans"
+        input: "Čau, co děláš v sobotu? Nechceš vyrazit na kolo?"
+        draft: |
+          Čau, jasně, sobota funguje. Dej vědět kam a kdy.
+
+          T.
+      - context: "Family member sharing photos"
+        input: "Koukni na fotky z dovolené! Bylo to super."
+        draft: |
+          Ty jo, to vypadá parádně! Kam přesně jste jeli?
+
+          T.

@@ -1,0 +1,31 @@
+#!/bin/bash
+# bin/process-inbox
+# Runs the full inbox processing pipeline.
+# Model routing: pass --model explicitly because command-level
+# model frontmatter has a known bug (anthropics/claude-code#13535).
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "=== Inbox Triage ==="
+claude --model haiku --command inbox-triage --print
+
+echo ""
+echo "=== Draft Responses ==="
+claude --model sonnet --command draft-response --print
+
+echo ""
+echo "=== Rework Drafts ==="
+claude --model sonnet --command rework-draft --print
+
+echo ""
+echo "=== Process Invoices ==="
+claude --model haiku --command process-invoices --print
+
+echo ""
+echo "=== Generate Dashboard ==="
+claude --model haiku --command morning-briefing --print
+
+echo ""
+echo "=== Done ==="

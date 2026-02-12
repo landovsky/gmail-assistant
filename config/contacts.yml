@@ -1,0 +1,17 @@
+# Specific email addresses
+style_overrides:
+  "novakova@zsskola.cz": formal
+  "petr@hristehrou.cz": business
+  "kamarad@gmail.com": informal
+  "ucetni@firma.cz": business
+
+# Domain patterns
+domain_overrides:
+  "*.gov.cz": formal
+  "*.mfcr.cz": formal
+  "*.edu.cz": formal
+  "*.justice.cz": formal
+
+# Language overrides (when auto-detection isn't enough)
+language_overrides:
+  "english-client@abroad.com": en

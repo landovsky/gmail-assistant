@@ -43,20 +43,20 @@ A self-hosted system that processes Gmail via MCP, classifies emails, generates 
 
 ## 1. Gmail Label System
 
-All system-managed labels are prefixed with `🤖/` to visually group them in Gmail's sidebar and distinguish them from manual labels.
+All system-managed labels are nested under a `🤖 AI` parent label in Gmail's sidebar, using the `🤖 AI/` prefix to distinguish them from manual labels.
 
 ### Labels
 
 | Label | Applied by | Meaning | User action |
 |---|---|---|---|
-| `🤖/Needs Response` | Processor | Email requires a reply | Wait for draft, or rework |
-| `🤖/Outbox` | Processor | Draft reply is ready in the thread | Review draft, edit, send |
-| `🤖/Rework` | **User** | Draft needs revision (user added instructions) | Wait for regenerated draft |
-| `🤖/Action Required` | Processor | Non-email action needed (sign, pay, attend…) | Do the thing, then apply `🤖/Done` |
-| `🤖/Invoice` | Processor | Unpaid invoice detected | Pay or forward to accountant |
-| `🤖/FYI` | Processor | Informational, no action needed | Skim or archive at will |
-| `🤖/Waiting` | Processor | Awaiting someone else's reply | System re-triages when reply arrives |
-| `🤖/Done` | **User** | Signals "I'm finished with this thread" | System archives, removes `🤖/*` labels, stops processing |
+| `🤖 AI/Needs Response` | Processor | Email requires a reply | Wait for draft, or rework |
+| `🤖 AI/Outbox` | Processor | Draft reply is ready in the thread | Review draft, edit, send |
+| `🤖 AI/Rework` | **User** | Draft needs revision (user added instructions) | Wait for regenerated draft |
+| `🤖 AI/Action Required` | Processor | Non-email action needed (sign, pay, attend…) | Do the thing, then apply `🤖 AI/Done` |
+| `🤖 AI/Invoice` | Processor | Unpaid invoice detected | Pay or forward to accountant |
+| `🤖 AI/FYI` | Processor | Informational, no action needed | Skim or archive at will |
+| `🤖 AI/Waiting` | Processor | Awaiting someone else's reply | System re-triages when reply arrives |
+| `🤖 AI/Done` | **User** | Signals "I'm finished with this thread" | System archives, removes other `🤖 AI/*` labels, keeps Done as audit marker |
 
 ### Label Lifecycle
 
@@ -66,30 +66,30 @@ New email arrives
     ▼
 inbox-triage classifies
     │
-    ├─→ 🤖/FYI                          (terminal — user archives when ready)
-    ├─→ 🤖/Action Required              → user acts → 🤖/Done → archived
-    ├─→ 🤖/Invoice                      → user pays → 🤖/Done → archived
-    ├─→ 🤖/Waiting                      → reply arrives → reclassified
-    └─→ 🤖/Needs Response
+    ├─→ 🤖 AI/FYI                          (terminal — user archives when ready)
+    ├─→ 🤖 AI/Action Required              → user acts → 🤖 AI/Done → archived
+    ├─→ 🤖 AI/Invoice                      → user pays → 🤖 AI/Done → archived
+    ├─→ 🤖 AI/Waiting                      → reply arrives → reclassified
+    └─→ 🤖 AI/Needs Response
             │
             ▼
         draft-response generates draft
             │
             ▼
-        🤖/Outbox
+        🤖 AI/Outbox
             │
             ├─→ User sends draft         → cleanup detects sent, removes label, DB → sent
-            ├─→ User adds note, relabels → 🤖/Rework → rework-draft
+            ├─→ User adds note, relabels → 🤖 AI/Rework → rework-draft
             │                                  │
             │                                  ▼
-            │                              Regenerated draft → 🤖/Outbox
-            │                              (max 3 reworks, then → 🤖/Action Required)
+            │                              Regenerated draft → 🤖 AI/Outbox
+            │                              (max 3 reworks, then → 🤖 AI/Action Required)
             └─→ User removes label        → interpreted as "skip, don't redraft"
 
-🤖/Done (user-applied on any thread)
+🤖 AI/Done (user-applied on any thread)
     │
     ▼
-Cleanup: remove all 🤖/* labels, remove from INBOX, DB → archived
+Cleanup: remove all 🤖 AI/* labels EXCEPT Done, archive from INBOX, DB → archived
 ```
 
 ---
@@ -98,16 +98,16 @@ Cleanup: remove all 🤖/* labels, remove from INBOX, DB → archived
 
 ### How it works
 
-1. User sees a draft in `🤖/Outbox` on mobile
+1. User sees a draft in `🤖 AI/Outbox` on mobile
 2. User opens the draft and types instructions **at the top** of the draft body, above a `---✂---` marker line
-3. User saves the draft and changes the label from `🤖/Outbox` → `🤖/Rework`
-4. Next processor run picks up `🤖/Rework` threads:
+3. User saves the draft and changes the label from `🤖 AI/Outbox` → `🤖 AI/Rework`
+4. Next processor run picks up `🤖 AI/Rework` threads:
    - Reads the user's note (everything above the `---✂---` marker)
    - If the note references other emails (e.g. "see the April email"), searches Gmail via MCP for matching threads with that contact around the referenced time
    - Feeds the note + any retrieved context into `rework-draft` command
    - Deletes the old draft and creates a new one on the same thread (Gmail MCP has no draft update — delete + recreate is the pattern)
-   - Moves label back to `🤖/Outbox`
-   - If this is the 3rd rework (max), adds a warning to the draft and moves to `🤖/Action Required` instead
+   - Moves label back to `🤖 AI/Outbox`
+   - If this is the 3rd rework (max), adds a warning to the draft and moves to `🤖 AI/Action Required` instead
 
 ### Draft format
 
@@ -326,24 +326,25 @@ Classify unprocessed emails, handle lifecycle transitions, and apply Gmail label
 
 ### Phase A: Cleanup & lifecycle transitions
 
-1. **🤖/Done cleanup.** Search for threads with `🤖/Done` label.
-   For each: remove all `🤖/*` labels, remove from INBOX (archive),
-   update local DB status to `archived`.
+1. **🤖 AI/Done cleanup.** Search for threads with `🤖 AI/Done` label.
+   For each: remove all `🤖 AI/*` labels EXCEPT `🤖 AI/Done` (keep it
+   as a permanent audit marker), remove from INBOX (archive),
+   update local DB status to `archived`. Log to `email_events`.
 
-2. **Sent draft detection.** For threads with `🤖/Outbox` label,
+2. **Sent draft detection.** For threads with `🤖 AI/Outbox` label,
    check if the stored `draft_id` in the local DB still exists as a
    draft. If the draft was sent (no longer exists as draft, but a sent
-   message exists in the thread), remove `🤖/Outbox` label and update
+   message exists in the thread), remove `🤖 AI/Outbox` label and update
    DB status to `sent`.
 
-3. **🤖/Waiting re-triage.** Search for threads with `🤖/Waiting` label.
+3. **🤖 AI/Waiting re-triage.** Search for threads with `🤖 AI/Waiting` label.
    For each, check if new inbound messages (not from me) have arrived
-   since the label was applied. If yes, remove `🤖/Waiting` and
+   since the label was applied. If yes, remove `🤖 AI/Waiting` and
    re-classify the thread in Phase B below.
 
 ### Phase B: Classify new emails
 
-4. Use Gmail MCP to fetch emails that have no `🤖/*` labels and are
+4. Use Gmail MCP to fetch emails that have no `🤖 AI/*` labels and are
    not in Trash or Spam. Include threads surfaced by Phase A step 3.
 5. For each email thread, read the full thread content via Gmail MCP.
    (Note: `read_email` reads one message at a time — search for all
@@ -359,7 +360,7 @@ Classify unprocessed emails, handle lifecycle transitions, and apply Gmail label
      where I'm not directly addressed
    - **waiting** — I sent the last message in this thread and am awaiting a reply
 
-7. Apply the corresponding `🤖/*` label via Gmail MCP.
+7. Apply the corresponding `🤖 AI/*` label via Gmail MCP.
 8. Store the classification in the local SQLite database at `data/inbox.db`:
    - gmail_thread_id, gmail_message_id, sender, subject
    - classification, confidence (high/medium/low), reasoning (one line)
@@ -398,7 +399,7 @@ Print a JSON summary:
 ```markdown
 # Draft Response
 
-Generate email reply drafts for threads labeled `🤖/Needs Response`.
+Generate email reply drafts for threads labeled `🤖 AI/Needs Response`.
 
 ## Steps
 
@@ -417,7 +418,7 @@ Generate email reply drafts for threads labeled `🤖/Needs Response`.
    e. Prepend the rework marker to the draft body:
       `---✂--- Your instructions above this line / Draft below ---✂---`
    f. Create the draft as a reply to the thread via Gmail MCP.
-   g. Move the label from `🤖/Needs Response` to `🤖/Outbox`.
+   g. Move the label from `🤖 AI/Needs Response` to `🤖 AI/Outbox`.
    h. Update the local DB: set status to `drafted`, store draft_id.
 
 ## Draft quality guidelines
@@ -440,15 +441,15 @@ Print a summary of drafts created with thread subjects and styles used.
 ```markdown
 # Rework Draft
 
-Process user feedback on drafts labeled `🤖/Rework`.
+Process user feedback on drafts labeled `🤖 AI/Rework`.
 
 ## Steps
 
-1. Use Gmail MCP to find threads with the `🤖/Rework` label.
+1. Use Gmail MCP to find threads with the `🤖 AI/Rework` label.
 2. For each thread:
    a. Check rework_count in local DB. If rework_count >= 3, this
       thread has exceeded the rework limit — move label to
-      `🤖/Action Required`, update DB status, and skip to next thread.
+      `🤖 AI/Action Required`, update DB status, and skip to next thread.
    b. Fetch the current draft from the thread.
    c. Extract user instructions: everything ABOVE the
       `---✂---` marker line in the draft body.
@@ -472,8 +473,8 @@ Process user feedback on drafts labeled `🤖/Rework`.
    i. If this is the 3rd rework (rework_count will become 3), prepend
       a warning to the draft body above the marker:
       `⚠️ This is the last automatic rework. Further changes must be made manually.`
-      And move the label to `🤖/Action Required` instead of `🤖/Outbox`.
-   j. Otherwise, move the label from `🤖/Rework` back to `🤖/Outbox`.
+      And move the label to `🤖 AI/Action Required` instead of `🤖 AI/Outbox`.
+   j. Otherwise, move the label from `🤖 AI/Rework` back to `🤖 AI/Outbox`.
    k. Update the local DB: increment rework_count, log the instruction,
       store the new draft_id.
 
@@ -495,11 +496,11 @@ and current rework count.
 ```markdown
 # Process Invoices
 
-Extract structured data from emails labeled `🤖/Invoice`.
+Extract structured data from emails labeled `🤖 AI/Invoice`.
 
 ## Steps
 
-1. Query Gmail MCP for threads with `🤖/Invoice` label
+1. Query Gmail MCP for threads with `🤖 AI/Invoice` label
    that haven't been processed yet (check local DB).
 2. For each thread:
    a. Extract:
@@ -540,7 +541,7 @@ Generate a local HTML dashboard summarizing the inbox state.
 - Total unprocessed
 
 ### Action queue
-For each `🤖/Outbox` and `🤖/Action Required` item, a card showing:
+For each `🤖 AI/Outbox` and `🤖 AI/Action Required` item, a card showing:
 - Subject, sender, date
 - Classification + one-line reasoning
 - Draft preview (first 3 lines) for Outbox items
@@ -672,7 +673,7 @@ CREATE TABLE IF NOT EXISTS emails (
     resolved_style TEXT DEFAULT 'business',
 
     -- Thread tracking
-    message_count INTEGER DEFAULT 1,  -- track message count to detect new replies in 🤖/Waiting threads
+    message_count INTEGER DEFAULT 1,  -- track message count to detect new replies in 🤖 AI/Waiting threads
 
     -- Draft tracking
     status TEXT DEFAULT 'pending'
@@ -706,6 +707,26 @@ CREATE TABLE IF NOT EXISTS emails (
 CREATE INDEX IF NOT EXISTS idx_emails_classification ON emails(classification);
 CREATE INDEX IF NOT EXISTS idx_emails_status ON emails(status);
 CREATE INDEX IF NOT EXISTS idx_emails_thread ON emails(gmail_thread_id);
+
+-- Audit log: every action the system takes on an email
+CREATE TABLE IF NOT EXISTS email_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    gmail_thread_id TEXT NOT NULL,
+    event_type TEXT NOT NULL
+        CHECK (event_type IN (
+            'classified', 'label_added', 'label_removed',
+            'draft_created', 'draft_deleted', 'draft_reworked',
+            'sent_detected', 'archived', 'rework_limit_reached',
+            'waiting_retriaged', 'error'
+        )),
+    detail TEXT,              -- human-readable description of what happened
+    label_id TEXT,            -- which label was added/removed (if applicable)
+    draft_id TEXT,            -- which draft was created/deleted (if applicable)
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_thread ON email_events(gmail_thread_id);
+CREATE INDEX IF NOT EXISTS idx_events_type ON email_events(event_type);
 ```
 
 ---
@@ -744,14 +765,14 @@ gmail-inbox-manager/
 - **No duplicate labels.** Check existing labels on a thread before applying new ones.
 - **Thread-level keying.** All processing is keyed on `gmail_thread_id`, not individual message IDs. A thread is one unit of work.
 - **No automatic sending.** The system NEVER sends an email. It only creates drafts and applies labels. The user always sends manually.
-- **No destructive actions.** The system never deletes emails or removes user-applied labels. It only adds/moves `🤖/*` labels and creates/updates drafts. Draft deletion only occurs as part of the delete+recreate pattern during rework (the new draft replaces the old one on the same thread).
-- **Rework is bounded.** After 3 rework cycles on the same thread, the system adds a warning to the final draft and moves it to `🤖/Action Required` for manual handling. The `rework_count` is tracked in the local DB.
+- **No destructive actions.** The system never deletes emails or removes user-applied labels. It only adds/moves `🤖 AI/*` labels and creates/updates drafts. Draft deletion only occurs as part of the delete+recreate pattern during rework (the new draft replaces the old one on the same thread).
+- **Rework is bounded.** After 3 rework cycles on the same thread, the system adds a warning to the final draft and moves it to `🤖 AI/Action Required` for manual handling. The `rework_count` is tracked in the local DB.
 
 ### Error handling
 
 - If Gmail MCP is unreachable, the processor logs the error and retries on next scheduled run.
-- If a draft creation fails, the email stays in `🤖/Needs Response` for the next run.
-- If classification confidence is `low`, apply `🤖/FYI` as a safe default (user can manually reclassify).
+- If a draft creation fails, the email stays in `🤖 AI/Needs Response` for the next run.
+- If classification confidence is `low`, apply `🤖 AI/FYI` as a safe default (user can manually reclassify).
 
 ---
 
@@ -785,6 +806,6 @@ gmail-inbox-manager/
 
 - [ ] Tune classification prompts based on real-world accuracy
 - [ ] Expand style examples based on actual sent emails
-- [ ] Add nudge/reminder logic for `🤖/Waiting` threads
+- [ ] Add nudge/reminder logic for `🤖 AI/Waiting` threads
 - [ ] Consider upgrading dashboard to a live Rails app if the static
       HTML feels limiting
