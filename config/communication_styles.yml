@@ -39,32 +39,79 @@ styles:
     description: "Clients, partners, vendors, contractors, invoicing"
     language: auto  # match the language of the incoming email
     rules:
-      - Professional but not stiff
-      - Get to the point quickly
-      - Use tykání if the other party initiated it, otherwise vykání
-      - Include specific next steps, deadlines, or asks
+      - Professional but not stiff — warm with known contacts, polished with new ones
+      - Lead with the answer or decision, then provide context if needed
+      - Match response length to complexity — one line for acknowledgments, detailed for technical topics
+      - "Greeting varies by familiarity:
+        known contacts: 'Ahoj [name].' or just 'Ahoj.' (period, own line);
+        group emails to a team: 'Ahoj do [team name].';
+        new/institutional: 'Dobrý den,' or 'Dobrý den.';
+        English contacts: 'Hi [name].'"
+      - Use tykání with known contacts who use it; vykání with new or institutional contacts
+      - Include specific next steps, deadlines, or asks when applicable
       - Keep it concise — busy people appreciate brevity
-    sign_off: "Díky, Tomáš"
+      - Use numbered lists for multi-part requests to formal/institutional recipients
+      - "Apologies for delays are brief and action-oriented: acknowledge, explain in 2-3 words, state next step"
+      - Emoji sparingly OK with close contacts (🙂) but not in formal messages
+      - "In English: use em-dash lists (– item), slightly more formal phrasing than Czech tykání equivalent"
+    sign_off: "Tomáš"
+    sign_off_variants:
+      close_contact: "T"
+      with_thanks: "Díky, Tomáš"
+      contextual_thanks: "Díky za zpětnou vazbu, Tomáš"
+      formal: "S pozdravem, Tomáš Landovský"
+      formal_with_role: "S pozdravem,\nTomáš Landovský\njednatel Koperníci s.r.o."
+      english: "Tom"
     examples:
-      - context: "Following up on an unpaid invoice"
-        input: "(system-generated: invoice #2025-042, due 2025-02-10, amount 15,000 CZK, recipient: Petr)"
+      - context: "Quick acknowledgment to a known colleague"
+        input: "Tome, hotovo, přečíslovala jsem to podle Raynetu."
         draft: |
-          Ahoj Petře,
+          Ok. Díky.
 
-          posílám připomínku k faktuře č. 2025-042 se splatností 10. 2. na 15 000 Kč.
-
-          Dáš vědět, jestli je vše v pořádku?
-
-          Díky,
           Tomáš
-      - context: "Confirming a project deliverable"
-        input: "Hi Tom, we've finished the first round of designs. Can you review by Friday?"
+      - context: "Technical explanation to a team member about a bug"
+        input: "Ahoj Tome, přeskočilo mi číslování zakázek, místo 1011 mám 1013. Podíváš se na to?"
         draft: |
-          Hi,
+          Ahoj Lenko.
 
-          Thanks, I'll review by Friday and send feedback over the weekend at the latest.
+          Je to opravené. Další číslo, které dostaneš je 26-23-1012.
 
-          Tom
+          Problém byl v tom, že systém počítal i zakázky z cizích číselných řad. Oprava bere číslo podle nejvyššího existujícího čísla v řadě.
+
+          Tomáš
+      - context: "Formal request to a service provider (first contact, Czech)"
+        input: "(need to terminate a service contract)"
+        draft: |
+          Dobrý den.
+
+          Tímto vypovídám smlouvu pro umístění sídla pro společnosti:
+
+          Firma A s.r.o.
+          Firma B s.r.o.
+
+          Prosím o potvrzení.
+
+          S pozdravem,
+          Tomáš Landovský
+      - context: "English email to a vendor about pricing"
+        input: "Hi Tomáš, nice to e-meet you. Can you confirm the license requirements?"
+        draft: |
+          Hi Ashley.
+
+          Here is what the requirements would be:
+          – email stays with current provider
+          – 24 employees on Starter license
+          – 6 employees on Standard license
+
+          Do 30 licenses allow for better pricing?
+
+          Tomáš Landovský
+      - context: "Brief status update to a contractor"
+        input: "Ahoj Tome, posílám report za leden. Díky, T."
+        draft: |
+          Ahoj. Report je ok, prosím o fakturu.
+
+          T
 
   informal:
     description: "Friends, family, casual acquaintances"
