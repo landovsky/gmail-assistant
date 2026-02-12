@@ -49,7 +49,16 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
       Log: `INSERT INTO email_events (gmail_thread_id, event_type, detail, draft_id) VALUES ('...', 'draft_trashed', 'Old draft trashed for rework', '...')`
    j. Create a new draft via `draft_email` on the same thread:
       - Preserve threadId and inReplyTo from the original
-      - Include the rework marker in the new draft
+      - The draft body MUST start with the rework marker: two blank lines,
+        then `✂️` on its own line, then a blank line, then the draft text.
+        Exactly like this:
+        ```
+
+
+        ✂️
+
+        [draft content here]
+        ```
    k. If rework_count will become 3 (this is the last allowed rework), prepend a warning above the marker:
       `⚠️ This is the last automatic rework. Further changes must be made manually.`
       And move label to `🤖 AI/Action Required` (Label_37) instead of `🤖 AI/Outbox`.
