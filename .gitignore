@@ -4,3 +4,4 @@ logs/
 config/communication_styles.yml
 config/contacts.yml
 config/label_ids.yml
+__pycache__/
