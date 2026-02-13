@@ -11,14 +11,18 @@ from src.config import AppConfig
 class LLMConfig:
     classify_model: str = "claude-haiku-4-5-20251001"
     draft_model: str = "claude-sonnet-4-5-20250929"
+    context_model: str = "claude-haiku-4-5-20251001"
     max_classify_tokens: int = 256
     max_draft_tokens: int = 2048
+    max_context_tokens: int = 256
 
     @classmethod
     def from_app_config(cls, config: AppConfig) -> LLMConfig:
         return cls(
             classify_model=config.llm.classify_model,
             draft_model=config.llm.draft_model,
+            context_model=config.llm.context_model,
             max_classify_tokens=config.llm.max_classify_tokens,
             max_draft_tokens=config.llm.max_draft_tokens,
+            max_context_tokens=config.llm.max_context_tokens,
         )

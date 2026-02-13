@@ -52,6 +52,24 @@ class UserGmailClient:
                 messages.append(msg)
         return messages
 
+    def search_metadata(self, query: str, max_results: int = 10) -> list[Message]:
+        """Search messages, fetching only metadata (no body). Much cheaper than search()."""
+        try:
+            results = (
+                self._gmail.messages()
+                .list(userId="me", q=query, maxResults=max_results)
+                .execute()
+            )
+            messages = []
+            for item in results.get("messages", []):
+                msg = self.get_message(item["id"], format="metadata")
+                if msg:
+                    messages.append(msg)
+            return messages
+        except Exception as e:
+            logger.error("Metadata search failed for query %r: %s", query, e)
+            return []
+
     def get_message(self, message_id: str, format: str = "full") -> Message | None:
         """Get a single message by ID."""
         try:
