@@ -764,18 +764,19 @@ Pub/Sub notification arrives
 
 ### Phase 1: Gmail API Foundation (replace MCP)
 
-- [ ] `src/gmail/auth.py` — Service account + impersonation
+- [ ] `src/gmail/auth.py` — Personal OAuth (lite mode first, service account later)
 - [ ] `src/gmail/client.py` — GmailService + UserGmailClient (search, get, modify, draft, batch)
-- [ ] `src/db/` — PostgreSQL schema, connection pool, migrations
+- [ ] `src/db/` — SQLite schema (evolve from existing `data/inbox.db`), migrations
+- [ ] `src/llm/gateway.py` — LLM gateway with LiteLLM
 - [ ] `src/users/onboarding.py` — Auto-provision labels, store IDs
 - [ ] Tests: Gmail client against a test account
 
-**Milestone**: Can search, read, label, and draft via direct API for any user in the org.
+**Milestone**: Can search, read, label, and draft via direct API. Single user, SQLite, personal OAuth.
 
 ### Phase 2: Classification + Lifecycle (replace Claude commands)
 
 - [ ] `src/classify/rules.py` — Rule-based pre-classifier (port from `bin/classify-phase-b`)
-- [ ] `src/classify/engine.py` — LLM classifier via Anthropic API
+- [ ] `src/classify/engine.py` — LLM classifier via gateway
 - [ ] `src/classify/prompts.py` — Extract classification prompt from `inbox-triage.md`
 - [ ] `src/lifecycle/manager.py` — Done/Sent/Waiting handlers (port from `cleanup.md`)
 - [ ] Tests: Classification accuracy against labeled test set
@@ -784,7 +785,7 @@ Pub/Sub notification arrives
 
 ### Phase 3: Draft Generation (replace draft-response command)
 
-- [ ] `src/draft/engine.py` — Draft generation via Claude Sonnet API
+- [ ] `src/draft/engine.py` — Draft generation via LLM gateway
 - [ ] `src/draft/prompts.py` — Extract draft prompt from `draft-response.md` and `rework-draft.md`
 - [ ] `src/users/settings.py` — Per-user styles, contacts, language
 - [ ] Rework loop implementation
@@ -803,17 +804,18 @@ Pub/Sub notification arrives
 
 **Milestone**: Near real-time email processing via push notifications.
 
-### Phase 5: Multi-User + Admin
+### Phase 5: Multi-User + Admin (upgrade from lite → multi-user)
 
+- [ ] PostgreSQL backend (add as alternative to SQLite)
+- [ ] Service account auth + domain-wide delegation
 - [ ] `src/api/admin.py` — User management (add, remove, configure)
 - [ ] `src/api/briefing.py` — Per-user briefing/dashboard endpoint
 - [ ] Asyncio job queue with PostgreSQL job table for concurrent per-user processing
 - [ ] Rate limiting (respect Gmail API quotas: 250 units/user/second)
 - [ ] Docker Compose for self-hosted deployment (app + PostgreSQL)
 - [ ] Monitoring, logging, health checks
-- [ ] Single-user lite mode (SQLite + personal OAuth + polling fallback)
 
-**Milestone**: Production-ready multi-user service + standalone lite mode.
+**Milestone**: Production-ready multi-user service. SQLite lite mode already works from Phases 1-4.
 
 ---
 
@@ -840,14 +842,22 @@ LLM API (via gateway — model-agnostic):
 
 ## Migration Path
 
-The v1 system can continue running during development. Migration per user:
+The v1 system can continue running during development. Migration is incremental:
 
-1. Export existing `data/inbox.db` into PostgreSQL (with user_id)
+### Single-user migration (v1 → v2 lite)
+1. Evolve existing `data/inbox.db` schema in place (add new columns, tables)
 2. Import `config/label_ids.yml` into `user_labels` table
 3. Import `config/contacts.yml` and `config/communication_styles.yml` into `user_settings`
-4. Set up watch() for the user
-5. Disable launchd scheduler
-6. Verify push-driven processing works
+4. Reuse existing OAuth credentials (`config/token.json`)
+5. Set up Pub/Sub watch() for the user
+6. Disable launchd scheduler
+7. Verify push-driven processing works
+
+### Multi-user upgrade (v2 lite → v2 full)
+1. Export SQLite data into PostgreSQL (with user_id scoping)
+2. Switch auth mode to service account + domain-wide delegation
+3. Onboard additional users
+4. Switch config to PostgreSQL backend
 
 ---
 
@@ -863,10 +873,6 @@ The v1 system can continue running during development. Migration per user:
 
 5. **Admin UI**: API + CLI first. Web UI is a future nice-to-have, not a v2 blocker.
 
----
+6. **Public endpoint**: Not a problem for self-hosted. Pub/Sub push webhook works directly.
 
-## Open Questions
-
-1. **Pub/Sub for self-hosted**: Gmail Pub/Sub requires a GCP project with a topic. For self-hosted deployments, the webhook endpoint needs to be publicly reachable. Options: reverse proxy, Cloudflare tunnel, or ngrok for dev. For lite mode (no GCP), polling is the fallback. Worth investigating if there's a simpler push mechanism.
-
-2. **SQLite for lite vs PostgreSQL for multi-user**: Should we abstract the DB layer enough to support both, or make PostgreSQL the only backend and let lite-mode users run a local PostgreSQL container? Dual-backend adds complexity but SQLite is significantly simpler for individual users.
+7. **Database**: Start with SQLite. Build the single-user path first, add PostgreSQL as the multi-user backend later. SQLite is the default; PostgreSQL is an upgrade path when scaling to multi-user.
