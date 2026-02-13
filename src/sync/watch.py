@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from src.db.connection import Database
-from src.db.models import SyncStateRepository, UserRepository
+from src.db.models import LabelsRepository, SyncStateRepository, UserRepository
 from src.gmail.client import GmailService
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,17 @@ class WatchManager:
 
         try:
             client = self.gmail_service.for_user(user_email)
-            response = client.watch(self.pubsub_topic)
+
+            # Include INBOX + user-action labels so Gmail pushes notifications
+            # for both new mail and manual label changes (needs_response, rework, done)
+            labels_repo = LabelsRepository(self.db)
+            label_ids = labels_repo.get_labels(user_id)
+            watch_labels = ["INBOX"]
+            for key in ("needs_response", "rework", "done"):
+                if lid := label_ids.get(key):
+                    watch_labels.append(lid)
+
+            response = client.watch(self.pubsub_topic, label_ids=watch_labels)
 
             if response:
                 self.sync_state.set_watch(
