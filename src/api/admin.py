@@ -91,6 +91,25 @@ async def get_user_emails(user_id: int, status: str | None = None, classificatio
         return repo.get_by_status(user_id, "pending")
 
 
+@router.post("/reset")
+async def reset_database() -> dict:
+    """Reset transient data — clears jobs, emails, events, sync state.
+
+    Preserves user accounts, labels, and settings.
+    """
+    db = get_db()
+    tables = ["jobs", "emails", "email_events", "sync_state"]
+    deleted = {}
+    for table in tables:
+        row = db.execute_one(f"SELECT count(*) as cnt FROM {table}")  # noqa: S608
+        deleted[table] = row["cnt"] if row else 0
+        db.execute_write(f"DELETE FROM {table}")  # noqa: S608
+
+    total = sum(deleted.values())
+    logger.warning("Database reset: deleted %d rows across %s", total, deleted)
+    return {"deleted": deleted, "total": total}
+
+
 @router.get("/health")
 async def health() -> dict:
     return {"status": "ok"}

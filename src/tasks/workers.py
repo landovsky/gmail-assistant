@@ -49,7 +49,7 @@ class WorkerPool:
         self.emails = EmailRepository(db)
         self.events = EventRepository(db)
         self.labels_repo = LabelRepository(db)
-        self.sync_engine = SyncEngine(db)
+        self.sync_engine = SyncEngine(db, config.sync)
         self.lifecycle = LifecycleManager(db, draft_engine)
         self._running = False
 

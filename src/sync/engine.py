@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.config import SyncConfig
 from src.db.connection import Database
 from src.db.models import (
     EmailRepository,
@@ -32,8 +33,9 @@ class SyncResult:
 class SyncEngine:
     """Incremental mailbox sync using Gmail History API."""
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, sync_config: SyncConfig | None = None):
         self.db = db
+        self.sync_config = sync_config or SyncConfig()
         self.sync_state = SyncStateRepository(db)
         self.emails = EmailRepository(db)
         self.events = EventRepository(db)
@@ -98,7 +100,8 @@ class SyncEngine:
                         "payment_request", "fyi", "waiting", "done")
         )
 
-        query = f"in:inbox newer_than:30d {exclusions} -in:trash -in:spam"
+        days = self.sync_config.full_sync_days
+        query = f"in:inbox newer_than:{days}d {exclusions} -in:trash -in:spam"
         messages = gmail_client.search(query, max_results=50)
 
         for msg in messages:
