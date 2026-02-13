@@ -22,9 +22,11 @@ Claude is being used as both the **runtime** (orchestration, I/O, state manageme
 
 1. **Gmail API direct** — All email operations via `google-api-python-client`, not MCP
 2. **Push, not poll** — Gmail Pub/Sub notifications for near real-time processing
-3. **LLM only for intelligence** — Claude API called only for classification and draft generation
-4. **Multi-user from day one** — Service account with domain-wide delegation
-5. **Preserve tagging logic** — The 8-label system, 5 categories, communication styles, rework loop all carry over unchanged
+3. **LLM only for intelligence** — LLM called only for classification and draft generation
+4. **Model-agnostic** — LLM gateway for flexible model choice (not locked to one provider)
+5. **Multi-user from day one** — Service account with domain-wide delegation
+6. **Single-user lite mode** — Personal OAuth path for non-Workspace individual users
+7. **Preserve tagging logic** — The 8-label system, 5 categories, communication styles, rework loop all carry over unchanged
 
 ---
 
@@ -47,12 +49,12 @@ Claude is being used as both the **runtime** (orchestration, I/O, state manageme
 |--------|-------------|---------------|
 | Gmail access | Gmail MCP server | `google-api-python-client` direct |
 | Orchestration | Claude Code commands + bash scripts | Python async application |
-| LLM usage | Claude as runtime (does everything) | Claude API for classification + drafting only |
+| LLM usage | Claude as runtime (does everything) | LLM gateway (model-agnostic) for classification + drafting only |
 | Sync model | Poll every 30 min (launchd) | Gmail Pub/Sub push (near real-time) |
 | Users | Single user, single OAuth token | Multi-user, service account impersonation |
 | Database | SQLite, no user scoping | PostgreSQL, all tables user-scoped |
 | Configuration | YAML files on disk | DB-stored per-user settings + org defaults |
-| Deployment | macOS CLI tool | Containerized service (Docker) |
+| Deployment | macOS CLI tool | Self-hosted, containerized (Docker Compose) |
 | Label management | Manual setup, IDs in YAML | Auto-provisioned on user onboarding |
 
 ---
@@ -77,16 +79,16 @@ Claude is being used as both the **runtime** (orchestration, I/O, state manageme
 │         │           └──────┬───────┘                            │
 │         │                  │                                     │
 │  ┌──────▼──────────────────▼────────────────────────────────┐   │
-│  │                    Task Queue (Redis)                      │   │
+│  │              Job Queue (PostgreSQL table)                  │   │
 │  │  sync:{user}  classify:{user}  draft:{user}  cleanup:{u} │   │
 │  └──────┬───────────────┬──────────────┬──────────┬─────────┘   │
 │         │               │              │          │              │
 │  ┌──────▼───────┐ ┌─────▼──────┐ ┌────▼────┐ ┌──▼──────────┐  │
 │  │ Sync Engine  │ │ Classifier │ │ Drafter │ │ Lifecycle   │  │
 │  │              │ │            │ │         │ │ Manager     │  │
-│  │ history.list │ │ Rules +    │ │ Claude  │ │             │  │
-│  │ incremental  │ │ Claude     │ │ Sonnet  │ │ Done/Sent/  │  │
-│  │ sync         │ │ Haiku API  │ │ API     │ │ Waiting     │  │
+│  │ history.list │ │ Rules +    │ │ LLM     │ │             │  │
+│  │ incremental  │ │ LLM        │ │ Gateway │ │ Done/Sent/  │  │
+│  │ sync         │ │ Gateway    │ │         │ │ Waiting     │  │
 │  └──────┬───────┘ └─────┬──────┘ └────┬────┘ └──┬──────────┘  │
 │         │               │              │          │              │
 │  ┌──────▼───────────────▼──────────────▼──────────▼──────────┐  │
@@ -266,7 +268,10 @@ Two-tier classification: fast rule-based pre-filter, then LLM for ambiguous case
 
 ```python
 class ClassificationEngine:
-    """Classifies emails using rules + Claude Haiku."""
+    """Classifies emails using rules + LLM gateway."""
+
+    def __init__(self, llm_gateway: LLMGateway):
+        self.llm = llm_gateway
 
     def classify(self, email: Email, user_settings: UserSettings) -> Classification:
         # Tier 1: Rule-based (instant, free)
@@ -274,7 +279,7 @@ class ClassificationEngine:
         if result.confidence == 'high':
             return result
 
-        # Tier 2: LLM-based (Claude Haiku API call)
+        # Tier 2: LLM-based (via gateway — model configurable)
         return self._llm_classify(email, user_settings)
 
     def _rule_based_classify(self, email, settings) -> Classification:
@@ -286,35 +291,86 @@ class ClassificationEngine:
         # Everything else → pass to LLM
 
     def _llm_classify(self, email, settings) -> Classification:
-        """Call Claude Haiku for nuanced classification."""
+        """Call LLM for nuanced classification."""
         # Single API call with email content + classification prompt
         # Returns: category, confidence, reasoning, detected_language
+```
+
+### LLM Gateway
+
+All LLM calls go through a gateway abstraction that decouples the application from any specific provider. This enables swapping models (Claude, GPT, Gemini, local models) without changing application code.
+
+```python
+class LLMGateway:
+    """Model-agnostic LLM interface. Backed by LiteLLM or similar router."""
+
+    def __init__(self, config: LLMConfig):
+        self.classify_model = config.classify_model   # e.g. "claude-haiku-4-5-20251001"
+        self.draft_model = config.draft_model         # e.g. "claude-sonnet-4-5-20250929"
+        # LiteLLM supports 100+ models via unified interface:
+        # "gpt-4o-mini", "gemini/gemini-2.0-flash", "claude-sonnet-4-5-20250929", etc.
+
+    def classify(self, system: str, user_message: str) -> ClassifyResult:
+        """Call the classification model (fast, cheap model)."""
+        response = litellm.completion(
+            model=self.classify_model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
+            max_tokens=256,
+            response_format={"type": "json_object"},  # structured output
+        )
+        return ClassifyResult.parse(response)
+
+    def draft(self, system: str, user_message: str) -> str:
+        """Call the draft generation model (higher quality model)."""
+        response = litellm.completion(
+            model=self.draft_model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
+            max_tokens=2048,
+        )
+        return response.choices[0].message.content
+```
+
+**Configuration** — model choice is a simple config change:
+
+```yaml
+# config/llm.yml (or env vars)
+llm:
+  classify_model: "claude-haiku-4-5-20251001"   # fast, cheap
+  draft_model: "claude-sonnet-4-5-20250929"     # high quality
+  # Alternative configurations:
+  # classify_model: "gpt-4o-mini"
+  # draft_model: "gpt-4o"
+  # classify_model: "gemini/gemini-2.0-flash"
+  # draft_model: "gemini/gemini-2.0-pro"
 ```
 
 **LLM call structure** — replaces the current approach where Claude reads the prompt from `.claude/commands/inbox-triage.md`, invokes MCP tools, thinks about it, etc. Instead:
 
 ```python
-response = anthropic_client.messages.create(
-    model="claude-haiku-4-5-20251001",
-    max_tokens=256,
+result = llm_gateway.classify(
     system="You are an email classifier. Classify into exactly ONE category...",
-    messages=[{
-        "role": "user",
-        "content": f"Subject: {email.subject}\nFrom: {email.sender}\n\n{email.body[:2000]}"
-    }],
-    # Structured output via tool_use for reliable parsing
+    user_message=f"Subject: {email.subject}\nFrom: {email.sender}\n\n{email.body[:2000]}",
 )
 ```
 
-**Batching opportunity**: For the scheduled full-sync fallback, batch 5-10 emails into a single Claude call with structured output per email.
+**Batching opportunity**: For the scheduled full-sync fallback, batch 5-10 emails into a single LLM call with structured output per email.
 
 ### 4. Draft Engine
 
-Generates reply drafts via Claude Sonnet API.
+Generates reply drafts via LLM gateway (defaults to a high-quality model).
 
 ```python
 class DraftEngine:
-    """Generates email drafts using Claude Sonnet."""
+    """Generates email drafts using LLM gateway."""
+
+    def __init__(self, llm_gateway: LLMGateway):
+        self.llm = llm_gateway
 
     def generate_draft(self, email: Email, style: CommunicationStyle,
                        user_settings: UserSettings,
@@ -327,7 +383,7 @@ class DraftEngine:
         # - Rework instruction (if rework)
         # - Language preference
         #
-        # Call Claude Sonnet API
+        # Call llm_gateway.draft()
         # Return formatted draft body with ✂️ marker
 
     def create_gmail_draft(self, user_client: UserGmailClient,
@@ -519,6 +575,56 @@ messages = gmail.users().messages().list(userId='me', q='in:inbox').execute()
 
 No per-user OAuth flow. No token storage. The service account credential is the only secret.
 
+### Single-User Lite Mode (Personal OAuth)
+
+For individual users who are **not** part of a Google Workspace org (personal Gmail, small teams without admin access), the system supports a "lite" mode using standard OAuth 2.0:
+
+```python
+class AuthMode(Enum):
+    SERVICE_ACCOUNT = "service_account"   # Multi-user, domain-wide delegation
+    PERSONAL_OAUTH = "personal_oauth"     # Single-user, personal Gmail
+
+class GmailAuth:
+    """Unified auth that supports both modes."""
+
+    def __init__(self, config: AuthConfig):
+        self.mode = config.auth_mode
+
+    def get_credentials(self, user_email: str = None) -> Credentials:
+        if self.mode == AuthMode.SERVICE_ACCOUNT:
+            return self._service_account_creds(user_email)
+        else:
+            return self._personal_oauth_creds()
+
+    def _personal_oauth_creds(self) -> Credentials:
+        """Load or refresh personal OAuth token."""
+        # Standard OAuth 2.0 flow:
+        # 1. First run: browser-based consent → stores refresh token
+        # 2. Subsequent runs: refresh token → access token
+        # Token stored in config/token.json (same as v1)
+```
+
+**Lite mode differences**:
+- Single user, no `users` table needed (or single row)
+- Settings stored in YAML files on disk (like v1) or DB — configurable
+- SQLite instead of PostgreSQL (optional — PostgreSQL still works)
+- No Pub/Sub push (requires GCP project with billing) — falls back to scheduled polling
+- Still gets all the speed benefits of direct Gmail API + LLM gateway
+
+**Configuration**:
+```yaml
+# config/app.yml
+auth:
+  mode: personal_oauth            # or "service_account"
+  credentials_file: config/credentials.json
+  token_file: config/token.json
+
+database:
+  backend: sqlite                 # or "postgresql"
+  sqlite_path: data/inbox.db     # lite mode
+  # postgresql_url: postgresql://...  # multi-user mode
+```
+
 ---
 
 ## User Onboarding Flow
@@ -543,10 +649,15 @@ gmail-assistant/
 │   ├── main.py                    # FastAPI app entry point
 │   ├── config.py                  # App configuration (env vars, defaults)
 │   │
+│   ├── llm/
+│   │   ├── __init__.py
+│   │   ├── gateway.py             # LLMGateway (LiteLLM-backed, model-agnostic)
+│   │   └── config.py              # Model selection config
+│   │
 │   ├── gmail/
 │   │   ├── __init__.py
 │   │   ├── client.py              # GmailService + UserGmailClient
-│   │   ├── auth.py                # Service account + impersonation
+│   │   ├── auth.py                # Service account + personal OAuth (dual mode)
 │   │   └── models.py              # Message, Thread, Draft dataclasses
 │   │
 │   ├── sync/
@@ -577,8 +688,9 @@ gmail-assistant/
 │   │
 │   ├── db/
 │   │   ├── __init__.py
-│   │   ├── connection.py          # PostgreSQL connection pool
+│   │   ├── connection.py          # DB connection (PostgreSQL or SQLite)
 │   │   ├── models.py              # SQLAlchemy models (or raw queries)
+│   │   ├── jobs.py                # PostgreSQL job queue (SKIP LOCKED)
 │   │   └── migrations/            # Alembic migrations
 │   │
 │   ├── api/
@@ -589,7 +701,7 @@ gmail-assistant/
 │   │
 │   └── tasks/
 │       ├── __init__.py
-│       └── workers.py             # Task queue workers (sync, classify, draft, cleanup)
+│       └── workers.py             # Asyncio workers (sync, classify, draft, cleanup)
 │
 ├── config/
 │   ├── communication_styles.yml   # Org-wide default styles (template)
@@ -601,7 +713,7 @@ gmail-assistant/
 │   ├── test_sync.py
 │   └── test_draft.py
 │
-├── docker-compose.yml             # App + PostgreSQL + Redis
+├── docker-compose.yml             # App + PostgreSQL (self-hosted)
 ├── Dockerfile
 ├── requirements.txt
 ├── alembic.ini
@@ -630,11 +742,11 @@ Pub/Sub notification arrives
   └─ Sync engine: history.list()                  ← ~200ms  (1 API call)
   └─ For each new message (parallel):
       ├─ Rule-based classify                      ← ~1ms    (local, no API)
-      ├─ LLM classify (if needed, Haiku)          ← ~500ms  (1 API call)
+      ├─ LLM classify (if needed, via gateway)    ← ~500ms  (1 API call)
       ├─ Apply label                              ← ~100ms  (1 API call, or batched)
       └─ Store in DB                              ← ~5ms    (local)
   └─ For needs_response emails (parallel):
-      ├─ Generate draft (Sonnet)                  ← ~3-5s   (1 API call)
+      ├─ Generate draft (via gateway)             ← ~3-5s   (1 API call)
       ├─ Create Gmail draft                       ← ~100ms  (1 API call)
       └─ Move label                               ← ~100ms  (1 API call)
                                                     ─────
@@ -695,12 +807,13 @@ Pub/Sub notification arrives
 
 - [ ] `src/api/admin.py` — User management (add, remove, configure)
 - [ ] `src/api/briefing.py` — Per-user briefing/dashboard endpoint
-- [ ] Task queue (Redis) for concurrent per-user processing
+- [ ] Asyncio job queue with PostgreSQL job table for concurrent per-user processing
 - [ ] Rate limiting (respect Gmail API quotas: 250 units/user/second)
-- [ ] Docker Compose for local dev, Dockerfile for production
+- [ ] Docker Compose for self-hosted deployment (app + PostgreSQL)
 - [ ] Monitoring, logging, health checks
+- [ ] Single-user lite mode (SQLite + personal OAuth + polling fallback)
 
-**Milestone**: Production-ready multi-user service.
+**Milestone**: Production-ready multi-user service + standalone lite mode.
 
 ---
 
@@ -718,10 +831,10 @@ Gmail API quotas to respect:
 | drafts.create | 10 units | One per draft |
 | history.list | 2 units | Very cheap, ideal for incremental sync |
 
-Anthropic API:
-- Haiku: Fast, cheap — use for classification
-- Sonnet: Higher quality — use for draft generation
-- Batch API available for non-urgent processing (50% cost reduction)
+LLM API (via gateway — model-agnostic):
+- Classification model: fast + cheap (default: Claude Haiku, alternatives: GPT-4o-mini, Gemini Flash)
+- Draft model: high quality (default: Claude Sonnet, alternatives: GPT-4o, Gemini Pro)
+- Provider batch APIs available for non-urgent processing (e.g. Anthropic Batch API: 50% cost reduction)
 
 ---
 
@@ -738,12 +851,22 @@ The v1 system can continue running during development. Migration per user:
 
 ---
 
+## Resolved Decisions
+
+1. **Task queue**: Simple asyncio + PostgreSQL job table. No Redis/Celery. A `jobs` table with `SKIP LOCKED` polling is sufficient for <100 users and keeps the stack minimal.
+
+2. **Single-user lite mode**: YES. Personal OAuth + SQLite + polling fallback for individual users not in a Workspace org. Same codebase, different config.
+
+3. **Deployment**: Self-hosted via Docker Compose (app + PostgreSQL). No cloud vendor lock-in. Pub/Sub webhook works from any publicly reachable endpoint (or via ngrok/Cloudflare tunnel for dev). Production can run on any VPS.
+
+4. **LLM provider**: LLM gateway (LiteLLM or similar) for model-agnostic operation. Default to Claude Haiku for classification + Claude Sonnet for drafts, but configurable to any provider (OpenAI, Google, local models). Single config change to swap models.
+
+5. **Admin UI**: API + CLI first. Web UI is a future nice-to-have, not a v2 blocker.
+
+---
+
 ## Open Questions
 
-1. **Task queue choice**: Redis + Celery vs. PostgreSQL-based queue (pgqueue) vs. simple asyncio? Celery is proven but heavy; asyncio with a simple job table may suffice for <100 users.
+1. **Pub/Sub for self-hosted**: Gmail Pub/Sub requires a GCP project with a topic. For self-hosted deployments, the webhook endpoint needs to be publicly reachable. Options: reverse proxy, Cloudflare tunnel, or ngrok for dev. For lite mode (no GCP), polling is the fallback. Worth investigating if there's a simpler push mechanism.
 
-2. **Admin UI**: Build a web UI for user management, or CLI-only for v2? A simple admin API + CLI tools may be enough initially.
-
-3. **Deployment target**: GCP Cloud Run (natural fit with Pub/Sub) vs. self-hosted VPS vs. Kubernetes? Cloud Run is simplest for Pub/Sub integration.
-
-4. **Existing single-user mode**: Keep a "lite" mode that works with personal OAuth (no service account) for individual users who aren't in a Workspace org?
+2. **SQLite for lite vs PostgreSQL for multi-user**: Should we abstract the DB layer enough to support both, or make PostgreSQL the only backend and let lite-mode users run a local PostgreSQL container? Dual-backend adds complexity but SQLite is significantly simpler for individual users.
