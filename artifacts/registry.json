@@ -28,5 +28,10 @@
     "filename": "artifacts/debugging-workflow-beads-grafana-bugsink-audit.md",
     "description": "Production debugging workflow using BugSink error tracking, Grafana logs, email_events audit table, and beads task management. Systematic debugging process and fix implementation protocol",
     "usage": "decide"
+  },
+  {
+    "filename": "artifacts/session-gotchas.md",
+    "description": "Lessons learned from 4 major dev sessions: Gmail API gotchas, async pitfalls, shell issues, architecture mistakes, performance measurement, UX corrections, and identified test gaps",
+    "usage": "decide"
   }
 ]
