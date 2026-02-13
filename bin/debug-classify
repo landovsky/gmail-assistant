@@ -1,0 +1,400 @@
+#!/usr/bin/env python3
+"""Debug classification — run an email through the pipeline and see what happens.
+
+Usage:
+    # Interactive (prompts for input):
+    bin/debug-classify
+
+    # Inline arguments:
+    bin/debug-classify --sender "petr@example.com" --subject "žádost o schůzku" \
+        --body "Mohli bychom se potkat dnes odpoledne?"
+
+    # From a file (one field per line: sender, subject, body):
+    bin/debug-classify --file samples/meeting-request.txt
+
+    # Also run through the LLM (requires ANTHROPIC_API_KEY):
+    bin/debug-classify --llm --sender "petr@example.com" --subject "test" --body "test"
+
+    # Replay a stored email from the database by thread ID:
+    bin/debug-classify --thread-id 18e1234abcd
+
+    # Show rule pattern details:
+    bin/debug-classify --verbose --sender "x" --subject "Invoice" --body "Pay 500 CZK"
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sqlite3
+import sys
+from pathlib import Path
+
+# Add project root to path
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+from src.classify.rules import (
+    ACTION_PATTERNS,
+    FYI_PATTERNS,
+    PAYMENT_PATTERNS,
+    RESPONSE_PATTERNS,
+    classify_by_rules,
+    resolve_communication_style,
+)
+from src.classify.prompts import CLASSIFY_SYSTEM_PROMPT, build_classify_user_message
+
+
+# ── ANSI colors ──────────────────────────────────────────────────────────────
+
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+
+def _header(title: str) -> None:
+    print(f"\n{BOLD}{CYAN}{'─' * 60}{RESET}")
+    print(f"{BOLD}{CYAN}  {title}{RESET}")
+    print(f"{BOLD}{CYAN}{'─' * 60}{RESET}")
+
+
+def _ok(msg: str) -> None:
+    print(f"  {GREEN}✓{RESET} {msg}")
+
+
+def _fail(msg: str) -> None:
+    print(f"  {RED}✗{RESET} {msg}")
+
+
+def _info(msg: str) -> None:
+    print(f"  {DIM}→{RESET} {msg}")
+
+
+def _result(label: str, value: str, color: str = "") -> None:
+    print(f"  {BOLD}{label}:{RESET} {color}{value}{RESET}")
+
+
+# ── Pattern scanning ─────────────────────────────────────────────────────────
+
+def scan_patterns(content: str, patterns: list[str], label: str, verbose: bool) -> str | None:
+    """Check a list of patterns against content. Returns first match or None."""
+    for pattern in patterns:
+        m = re.search(pattern, content)
+        if m:
+            if verbose:
+                _ok(f"{label}: matched {BOLD}{pattern!r}{RESET} → {m.group()!r}")
+            return pattern
+        elif verbose:
+            _info(f"{label}: no match for {pattern!r}")
+    return None
+
+
+def debug_rules(
+    sender_email: str,
+    subject: str,
+    body: str,
+    blacklist: list[str],
+    verbose: bool = False,
+) -> None:
+    """Run rule engine step by step with detailed output."""
+    _header("Rule Engine (Tier 1)")
+
+    content = f"{subject or ''} {body or ''}".lower()
+    print(f"  {DIM}Content ({len(content)} chars): {content[:120]}{'…' if len(content) > 120 else ''}{RESET}")
+    print()
+
+    # Step 1: Blacklist
+    print(f"  {BOLD}[1] Blacklist check{RESET}")
+    if blacklist:
+        from src.classify.rules import _matches_blacklist
+
+        if _matches_blacklist(sender_email, blacklist):
+            _ok(f"Sender {sender_email} matched blacklist → {RED}fyi (high){RESET}")
+            return
+        else:
+            _info(f"No match ({len(blacklist)} patterns)")
+    else:
+        _info("No blacklist configured")
+
+    # Step 2: Automated sender
+    print(f"  {BOLD}[2] Automated sender check{RESET}")
+    sender_lower = sender_email.lower()
+    auto_patterns = ["noreply", "no-reply", "mailer-daemon", "notifications"]
+    matched_auto = [p for p in auto_patterns if p in sender_lower]
+    if matched_auto:
+        _ok(f"Matched: {matched_auto} → {RED}fyi (high){RESET}")
+        return
+    else:
+        _info(f"Not automated ({sender_email})")
+
+    # Step 3: Payment patterns
+    print(f"  {BOLD}[3] Payment patterns{RESET}")
+    if scan_patterns(content, PAYMENT_PATTERNS, "payment", verbose):
+        _ok(f"→ {YELLOW}payment_request (high){RESET}")
+        return
+    else:
+        _info("No payment match")
+
+    # Step 4: Action patterns
+    print(f"  {BOLD}[4] Action patterns{RESET}")
+    if scan_patterns(content, ACTION_PATTERNS, "action", verbose):
+        _ok(f"→ {RED}action_required (high){RESET}")
+        return
+    else:
+        _info("No action match")
+
+    # Step 5: FYI patterns
+    print(f"  {BOLD}[5] FYI patterns{RESET}")
+    if scan_patterns(content, FYI_PATTERNS, "fyi", verbose):
+        _ok(f"→ {DIM}fyi (high){RESET}")
+        return
+    else:
+        _info("No FYI match")
+
+    # Step 6: Response patterns
+    print(f"  {BOLD}[6] Response patterns{RESET}")
+    if scan_patterns(content, RESPONSE_PATTERNS, "response", verbose):
+        _ok(f"→ {GREEN}needs_response (medium){RESET} — will pass to LLM for confirmation")
+        return
+    else:
+        _info("No response match")
+
+    # No match
+    print()
+    _fail("No rule matched → will pass to LLM with low confidence")
+
+
+def debug_classify_full(
+    sender_email: str,
+    sender_name: str,
+    subject: str,
+    body: str,
+    blacklist: list[str],
+    contacts_config: dict,
+    verbose: bool = False,
+) -> None:
+    """Run full classification pipeline with detailed output."""
+
+    _header("Email Input")
+    _result("From", f"{sender_name} <{sender_email}>" if sender_name else sender_email)
+    _result("Subject", subject or "(empty)")
+    _result("Body", f"{body[:200]}{'…' if len(body) > 200 else ''}" if body else "(empty)")
+
+    # Run rule engine
+    debug_rules(sender_email, subject, body, blacklist, verbose)
+
+    # Show the actual rule result
+    _header("Rule Engine Result")
+    result = classify_by_rules(sender_email, subject, "", body, blacklist)
+    color = GREEN if result.category == "needs_response" else (
+        RED if result.category == "action_required" else (
+            YELLOW if result.category == "payment_request" else DIM
+        )
+    )
+    _result("Category", result.category, color)
+    _result("Confidence", result.confidence)
+    _result("Matched (skip LLM)", str(result.matched))
+    _result("Reasoning", result.reasoning)
+
+    # Style resolution
+    style = resolve_communication_style(sender_email, contacts_config)
+    _result("Resolved style", style)
+
+    # LLM preview
+    _header("LLM Input (what Tier 2 would see)")
+    user_msg = build_classify_user_message(
+        sender_email=sender_email,
+        sender_name=sender_name,
+        subject=subject,
+        snippet="",
+        body=body,
+    )
+    print(f"{DIM}")
+    print(user_msg)
+    print(f"{RESET}")
+
+    if not result.matched:
+        print(f"  {YELLOW}→ This email WILL be sent to LLM for classification{RESET}")
+    else:
+        print(f"  {DIM}→ Rules matched with high confidence — LLM will be skipped{RESET}")
+
+
+def debug_with_llm(
+    sender_email: str,
+    sender_name: str,
+    subject: str,
+    body: str,
+) -> None:
+    """Actually call the LLM and show its response."""
+    _header("LLM Classification (Tier 2) — LIVE CALL")
+    try:
+        from src.llm.config import LLMConfig
+        from src.llm.gateway import LLMGateway
+
+        config = LLMConfig()
+        gateway = LLMGateway(config)
+
+        user_msg = build_classify_user_message(
+            sender_email=sender_email,
+            sender_name=sender_name,
+            subject=subject,
+            snippet="",
+            body=body,
+        )
+
+        _info(f"Calling {config.classify_model}...")
+        result = gateway.classify(system=CLASSIFY_SYSTEM_PROMPT, user_message=user_msg)
+
+        color = GREEN if result.category == "needs_response" else (
+            RED if result.category == "action_required" else (
+                YELLOW if result.category == "payment_request" else DIM
+            )
+        )
+        _result("Category", result.category, color)
+        _result("Confidence", result.confidence)
+        _result("Reasoning", result.reasoning)
+        _result("Language", result.detected_language)
+
+    except ImportError as e:
+        _fail(f"Cannot import LLM gateway: {e}")
+        _info("Make sure ANTHROPIC_API_KEY is set and litellm is installed")
+    except Exception as e:
+        _fail(f"LLM call failed: {e}")
+
+
+def load_from_db(thread_id: str) -> dict | None:
+    """Load email data from the local database."""
+    db_path = REPO_ROOT / "data" / "inbox.db"
+    if not db_path.exists():
+        _fail(f"Database not found: {db_path}")
+        return None
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT sender_email, sender_name, subject, snippet, "
+        "classification, confidence, reasoning, detected_language, resolved_style "
+        "FROM emails WHERE gmail_thread_id = ? LIMIT 1",
+        (thread_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        _fail(f"Thread {thread_id} not found in database")
+        return None
+
+    _header("Stored Classification (from DB)")
+    _result("Classification", dict(row)["classification"])
+    _result("Confidence", dict(row)["confidence"])
+    _result("Reasoning", dict(row).get("reasoning", ""))
+    _result("Language", dict(row).get("detected_language", ""))
+    _result("Style", dict(row).get("resolved_style", ""))
+
+    return dict(row)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Debug email classification — run emails through the pipeline step by step",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("--sender", default="", help="Sender email address")
+    parser.add_argument("--sender-name", default="", help="Sender display name")
+    parser.add_argument("--subject", default="", help="Email subject")
+    parser.add_argument("--body", default="", help="Email body text")
+    parser.add_argument("--file", help="Read email from file (sender\\nsubject\\nbody)")
+    parser.add_argument("--thread-id", help="Replay a stored email from the database")
+    parser.add_argument("--llm", action="store_true", help="Also run through LLM (needs API key)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show all pattern checks")
+    parser.add_argument(
+        "--blacklist", nargs="*", default=[], help="Blacklist patterns to test against"
+    )
+    args = parser.parse_args()
+
+    # Load from database
+    if args.thread_id:
+        row = load_from_db(args.thread_id)
+        if not row:
+            return 1
+        args.sender = row["sender_email"]
+        args.sender_name = row.get("sender_name", "")
+        args.subject = row.get("subject", "")
+        args.body = row.get("snippet", "")  # DB may not have full body
+
+    # Load from file
+    if args.file:
+        try:
+            with open(args.file) as f:
+                lines = f.read().strip().split("\n")
+            if len(lines) >= 1:
+                args.sender = lines[0]
+            if len(lines) >= 2:
+                args.subject = lines[1]
+            if len(lines) >= 3:
+                args.body = "\n".join(lines[2:])
+        except FileNotFoundError:
+            _fail(f"File not found: {args.file}")
+            return 1
+
+    # Interactive mode if no input
+    if not args.sender and not args.subject and not args.body:
+        print(f"{BOLD}Interactive classification debug{RESET}")
+        print(f"{DIM}Enter email details (press Enter to skip):{RESET}")
+        args.sender = input("  Sender email: ").strip()
+        args.sender_name = input("  Sender name: ").strip()
+        args.subject = input("  Subject: ").strip()
+        print("  Body (end with empty line):")
+        body_lines = []
+        while True:
+            line = input("  ")
+            if not line:
+                break
+            body_lines.append(line)
+        args.body = "\n".join(body_lines)
+
+    # Load blacklist from config if available
+    blacklist = list(args.blacklist)
+    contacts_config: dict = {}
+    contacts_file = REPO_ROOT / "config" / "contacts.yml"
+    if contacts_file.exists():
+        try:
+            import yaml
+
+            with open(contacts_file) as f:
+                contacts_config = yaml.safe_load(f) or {}
+            blacklist.extend(contacts_config.get("blacklist", []))
+        except Exception:
+            pass  # YAML not available or file broken
+
+    # Run debug
+    debug_classify_full(
+        sender_email=args.sender,
+        sender_name=args.sender_name or "",
+        subject=args.subject,
+        body=args.body,
+        blacklist=blacklist,
+        contacts_config=contacts_config,
+        verbose=args.verbose,
+    )
+
+    # Optionally run LLM
+    if args.llm:
+        debug_with_llm(
+            sender_email=args.sender,
+            sender_name=args.sender_name or "",
+            subject=args.subject,
+            body=args.body,
+        )
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

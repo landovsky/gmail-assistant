@@ -37,6 +37,11 @@ ACTION_PATTERNS = [
     r"signature required", r"please confirm",
     r"action required", r"urgent", r"asap",
     r"podepsat|schválit|potvrdit|vyžaduje (akci|vašu akci)",
+    # Meeting/appointment requests (EN + CS + DE)
+    r"meeting request", r"calendar invite", r"attend.*meeting",
+    r"schůzk[auyáě]", r"setkání", r"sejít se", r"potkat se",
+    r"žádost o schůzku",
+    r"termin", r"treffen",  # DE: appointment, meet
 ]
 
 # Automated/FYI indicators
@@ -54,7 +59,10 @@ RESPONSE_PATTERNS = [
     r"please\s+(let|send|provide|check|review)",
     r"what.*think|your (opinion|thoughts|feedback)",
     r"can i.*you", r"do you.*think",
+    # Czech: question/request patterns
     r"co si myslíš", r"tvůj názor", r"co se ti jeví",
+    r"mohl[ai]?\s+bys", r"mohli\s+bychom", r"můžeš", r"můžete",
+    r"dej\s+mi\s+vědět", r"ozvi\s+se", r"napiš\s+mi",
 ]
 
 
