@@ -327,32 +327,42 @@ class JobRepository:
         )
 
     def claim_next(self, job_type: str | None = None) -> Job | None:
-        """Claim the next pending job (simple SQLite version)."""
-        where = "WHERE status = 'pending' AND attempts < max_attempts"
+        """Atomically claim the next pending job.
+
+        Uses UPDATE ... RETURNING (SQLite 3.35+) to avoid race conditions
+        when multiple workers call claim_next concurrently.
+        """
+        type_filter = "AND job_type = ?" if job_type else ""
         params: list[Any] = []
         if job_type:
-            where += " AND job_type = ?"
             params.append(job_type)
 
-        row = self.db.execute_one(
-            f"SELECT * FROM jobs {where} ORDER BY created_at LIMIT 1",
-            tuple(params),
-        )
+        sql = f"""
+            UPDATE jobs
+            SET status = 'running',
+                attempts = attempts + 1,
+                started_at = CURRENT_TIMESTAMP
+            WHERE id = (
+                SELECT id FROM jobs
+                WHERE status = 'pending' AND attempts < max_attempts
+                {type_filter}
+                ORDER BY created_at
+                LIMIT 1
+            )
+            RETURNING *
+        """
+
+        row = self.db.execute_one(sql, tuple(params))
         if not row:
             return None
 
-        job_id = row["id"]
-        self.db.execute_write(
-            "UPDATE jobs SET status = 'running', attempts = attempts + 1, started_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (job_id,),
-        )
         return Job(
-            id=job_id,
+            id=row["id"],
             job_type=row["job_type"],
             user_id=row["user_id"],
             payload=json.loads(row["payload"]),
             status="running",
-            attempts=row["attempts"] + 1,
+            attempts=row["attempts"],
         )
 
     def complete(self, job_id: int) -> None:

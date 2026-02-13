@@ -1,15 +1,18 @@
-"""Async workers — process jobs from the queue."""
+"""Async workers — process jobs from the queue.
+
+Runs N concurrent worker coroutines. All blocking I/O (Gmail API, LLM,
+SQLite) is pushed to threads via asyncio.to_thread so the FastAPI event
+loop stays responsive.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import time
 from typing import Any
 
 from src.classify.engine import ClassificationEngine
-from src.config import AppConfig, load_contacts_config
+from src.config import AppConfig
 from src.db.connection import Database
 from src.db.models import (
     EmailRecord,
@@ -52,31 +55,43 @@ class WorkerPool:
         self.sync_engine = SyncEngine(db, config.sync)
         self.lifecycle = LifecycleManager(db, draft_engine)
         self._running = False
+        self._concurrency = config.server.worker_concurrency
 
     async def start(self, poll_interval: float = 1.0) -> None:
-        """Start the worker loop."""
+        """Start N concurrent worker loops."""
         self._running = True
-        logger.info("Worker pool started")
-        while self._running:
-            job = self.jobs.claim_next()
-            if job:
-                await self._process_job(job)
-            else:
-                await asyncio.sleep(poll_interval)
+        logger.info("Worker pool started (%d workers)", self._concurrency)
+        tasks = [
+            asyncio.create_task(self._worker_loop(i, poll_interval))
+            for i in range(self._concurrency)
+        ]
+        await asyncio.gather(*tasks)
 
     def stop(self) -> None:
-        """Stop the worker loop."""
+        """Stop all worker loops."""
         self._running = False
         logger.info("Worker pool stopping")
 
-    async def _process_job(self, job: Any) -> None:
+    async def _worker_loop(self, worker_id: int, poll_interval: float) -> None:
+        """Single worker loop — claim and process jobs."""
+        while self._running:
+            job = await asyncio.to_thread(self.jobs.claim_next)
+            if job:
+                await self._process_job(job, worker_id)
+            else:
+                await asyncio.sleep(poll_interval)
+
+    async def _process_job(self, job: Any, worker_id: int = 0) -> None:
         """Dispatch a job to the appropriate handler."""
         try:
-            logger.info("Processing job %d: %s (user=%d)", job.id, job.job_type, job.user_id)
+            logger.info(
+                "Worker %d processing job %d: %s (user=%d)",
+                worker_id, job.id, job.job_type, job.user_id,
+            )
 
-            user = self.users.get_by_id(job.user_id)
+            user = await asyncio.to_thread(self.users.get_by_id, job.user_id)
             if not user:
-                self.jobs.fail(job.id, f"User {job.user_id} not found")
+                await asyncio.to_thread(self.jobs.fail, job.id, f"User {job.user_id} not found")
                 return
 
             gmail_client = self.gmail_service.for_user(user.email)
@@ -92,45 +107,49 @@ class WorkerPool:
             elif job.job_type == "rework":
                 await self._handle_rework(job, gmail_client)
             else:
-                self.jobs.fail(job.id, f"Unknown job type: {job.job_type}")
+                await asyncio.to_thread(
+                    self.jobs.fail, job.id, f"Unknown job type: {job.job_type}"
+                )
                 return
 
-            self.jobs.complete(job.id)
+            await asyncio.to_thread(self.jobs.complete, job.id)
 
         except Exception as e:
             logger.error("Job %d failed: %s", job.id, e, exc_info=True)
             if job.attempts < job.max_attempts:
-                self.jobs.retry(job.id, str(e))
+                await asyncio.to_thread(self.jobs.retry, job.id, str(e))
             else:
-                self.jobs.fail(job.id, str(e))
+                await asyncio.to_thread(self.jobs.fail, job.id, str(e))
 
     async def _handle_sync(self, job: Any, gmail_client: UserGmailClient) -> None:
         history_id = job.payload.get("history_id")
-        self.sync_engine.sync_user(job.user_id, gmail_client, history_id)
+        await asyncio.to_thread(
+            self.sync_engine.sync_user, job.user_id, gmail_client, history_id
+        )
 
     async def _handle_classify(self, job: Any, gmail_client: UserGmailClient) -> None:
         message_id = job.payload.get("message_id")
-        thread_id = job.payload.get("thread_id")
 
         if not message_id:
             return
 
         # Get message content
-        msg = gmail_client.get_message(message_id)
+        msg = await asyncio.to_thread(gmail_client.get_message, message_id)
         if not msg:
             return
 
         # Check if already classified
-        existing = self.emails.get_by_thread(job.user_id, msg.thread_id)
+        existing = await asyncio.to_thread(self.emails.get_by_thread, job.user_id, msg.thread_id)
         if existing:
             return
 
         # Get user settings
-        settings = UserSettings(self.db, job.user_id)
+        settings = await asyncio.to_thread(UserSettings, self.db, job.user_id)
         contacts = settings.contacts
 
-        # Classify
-        result = self.classification_engine.classify(
+        # Classify (LLM call — most expensive)
+        result = await asyncio.to_thread(
+            self.classification_engine.classify,
             sender_email=msg.sender_email,
             sender_name=msg.sender_name,
             subject=msg.subject,
@@ -142,10 +161,10 @@ class WorkerPool:
         )
 
         # Apply Gmail label
-        label_ids = self.labels_repo.get_labels(job.user_id)
+        label_ids = await asyncio.to_thread(self.labels_repo.get_labels, job.user_id)
         label_id = label_ids.get(result.category)
         if label_id:
-            gmail_client.modify_labels(message_id, add=[label_id])
+            await asyncio.to_thread(gmail_client.modify_labels, message_id, add=[label_id])
 
         # Store in DB
         record = EmailRecord(
@@ -163,20 +182,23 @@ class WorkerPool:
             detected_language=result.detected_language,
             resolved_style=result.resolved_style,
         )
-        self.emails.upsert(record)
+        await asyncio.to_thread(self.emails.upsert, record)
 
         # Log event
-        self.events.log(
+        await asyncio.to_thread(
+            self.events.log,
             job.user_id, msg.thread_id, "classified",
             f"{result.category} ({result.confidence}, source={result.source})",
         )
 
         # Queue draft if needs_response
         if result.category == "needs_response":
-            self.jobs.enqueue("draft", job.user_id, {
-                "thread_id": msg.thread_id,
-                "message_id": msg.id,
-            })
+            await asyncio.to_thread(
+                self.jobs.enqueue, "draft", job.user_id, {
+                    "thread_id": msg.thread_id,
+                    "message_id": msg.id,
+                },
+            )
 
         logger.info(
             "Classified %s → %s (%s, %s)",
@@ -188,20 +210,21 @@ class WorkerPool:
         if not thread_id:
             return
 
-        email = self.emails.get_by_thread(job.user_id, thread_id)
+        email = await asyncio.to_thread(self.emails.get_by_thread, job.user_id, thread_id)
         if not email or email["status"] != "pending":
             return
 
         # Get thread for context
-        thread = gmail_client.get_thread(thread_id)
+        thread = await asyncio.to_thread(gmail_client.get_thread, thread_id)
         if not thread or not thread.latest_message:
             return
 
-        settings = UserSettings(self.db, job.user_id)
+        settings = await asyncio.to_thread(UserSettings, self.db, job.user_id)
         thread_body = "\n---\n".join(m.body[:1000] for m in thread.messages)
 
-        # Generate draft
-        draft_body = self.draft_engine.generate_draft(
+        # Generate draft (LLM call)
+        draft_body = await asyncio.to_thread(
+            self.draft_engine.generate_draft,
             sender_email=email["sender_email"],
             sender_name=email.get("sender_name", ""),
             subject=email.get("subject", ""),
@@ -212,7 +235,8 @@ class WorkerPool:
 
         # Create Gmail draft
         latest = thread.latest_message
-        draft_id = gmail_client.create_draft(
+        draft_id = await asyncio.to_thread(
+            gmail_client.create_draft,
             thread_id=thread_id,
             to=email["sender_email"],
             subject=email.get("subject", ""),
@@ -224,16 +248,19 @@ class WorkerPool:
             raise RuntimeError(f"Failed to create draft for thread {thread_id}")
 
         # Move label: Needs Response → Outbox
-        label_ids = self.labels_repo.get_labels(job.user_id)
+        label_ids = await asyncio.to_thread(self.labels_repo.get_labels, job.user_id)
         needs_resp = label_ids.get("needs_response")
         outbox = label_ids.get("outbox")
         if needs_resp and outbox:
             msg_ids = [m.id for m in thread.messages]
-            gmail_client.batch_modify_labels(msg_ids, add=[outbox], remove=[needs_resp])
+            await asyncio.to_thread(
+                gmail_client.batch_modify_labels, msg_ids, add=[outbox], remove=[needs_resp]
+            )
 
         # Update DB
-        self.emails.update_draft(job.user_id, thread_id, draft_id)
-        self.events.log(
+        await asyncio.to_thread(self.emails.update_draft, job.user_id, thread_id, draft_id)
+        await asyncio.to_thread(
+            self.events.log,
             job.user_id, thread_id, "draft_created",
             f"Draft created with style: {email.get('resolved_style', 'business')}",
             draft_id=draft_id,
@@ -243,24 +270,28 @@ class WorkerPool:
 
     async def _handle_cleanup(self, job: Any, gmail_client: UserGmailClient) -> None:
         action = job.payload.get("action", "")
-        message_id = job.payload.get("message_id", "")
         thread_id = job.payload.get("thread_id", "")
 
         if action == "done" and thread_id:
-            self.lifecycle.handle_done(job.user_id, thread_id, gmail_client)
+            await asyncio.to_thread(
+                self.lifecycle.handle_done, job.user_id, thread_id, gmail_client
+            )
         elif action == "check_sent" and thread_id:
-            self.lifecycle.handle_sent_detection(job.user_id, thread_id, gmail_client)
+            await asyncio.to_thread(
+                self.lifecycle.handle_sent_detection, job.user_id, thread_id, gmail_client
+            )
 
     async def _handle_rework(self, job: Any, gmail_client: UserGmailClient) -> None:
         message_id = job.payload.get("message_id", "")
 
         # Need to find the thread_id from the message
-        msg = gmail_client.get_message(message_id) if message_id else None
+        msg = await asyncio.to_thread(gmail_client.get_message, message_id) if message_id else None
         if not msg:
             return
 
-        settings = UserSettings(self.db, job.user_id)
-        self.lifecycle.handle_rework(
+        settings = await asyncio.to_thread(UserSettings, self.db, job.user_id)
+        await asyncio.to_thread(
+            self.lifecycle.handle_rework,
             job.user_id, msg.thread_id, gmail_client,
             style_config=settings.communication_styles,
         )

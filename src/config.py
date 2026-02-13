@@ -74,6 +74,7 @@ class ServerConfig(BaseSettings):
     port: int = 8000
     webhook_secret: str = ""
     log_level: str = "info"
+    worker_concurrency: int = 3
 
     model_config = {"env_prefix": "GMA_SERVER_"}
 
