@@ -13,6 +13,7 @@ The system never sends or deletes email. It only reads, labels, and creates draf
   - [Manually request a draft](#manually-request-a-draft) — implemented
   - [Mark an email as done](#mark-an-email-as-done) — implemented
   - [Detect payment requests](#detect-payment-requests) — implemented
+  - [Agent-based email processing](#agent-based-email-processing) — implemented (stub tools)
   - [Waiting thread re-triage](#waiting-thread-re-triage) — not yet implemented
   - [Get an inbox briefing](#get-an-inbox-briefing) — implemented
   - [Customize communication style](#customize-communication-style) — implemented
@@ -85,6 +86,44 @@ The `🤖 AI/Done` label is kept permanently as an audit trail marker.
 > **Status:** Implemented
 
 Emails classified as `Payment Request` are labeled for easy tracking. The classification picks up invoices, bills, payment reminders, and similar.
+
+### Agent-based email processing
+> **Status:** Implemented (stub tools — real API integration pending)
+
+Some emails need more than classification and a draft — they need an AI agent that can look up information, take actions, and compose responses autonomously. The agent architecture supports this via config-driven routing rules.
+
+**How it works:**
+
+1. When a new email arrives, the system checks routing rules in `config/app.yml`
+2. Emails matching an agent rule (e.g., forwarded from a specific address) are routed to an agent instead of the standard classify→draft pipeline
+3. The agent runs a tool-use loop: it reads the email, decides what tools to use (search, reserve, reply, escalate), executes them, and repeats until done
+4. All agent actions are logged to the `agent_runs` table for full audit
+
+**Current agent profile:** Pharmacy support (dostupnost-leku.cz)
+- Handles drug availability queries forwarded from the Crisp helpdesk
+- Tools: `search_drugs`, `manage_reservation`, `web_search`, `send_reply`, `create_draft`, `escalate`
+- All tools are currently stubbed with mock responses — real API integration comes later
+
+**Adding a new agent profile:**
+
+1. Create a system prompt in `config/prompts/`
+2. Implement tools in `src/agent/tools/`
+3. Add a routing rule and agent profile to `config/app.yml`
+
+**Routing rule example** (`config/app.yml`):
+```yaml
+routing:
+  rules:
+    - name: pharmacy_support
+      match:
+        forwarded_from: "info@dostupnost-leku.cz"
+      route: agent
+      profile: pharmacy
+    - name: default
+      match:
+        all: true
+      route: pipeline
+```
 
 ### Waiting thread re-triage
 > **Status:** Not yet implemented

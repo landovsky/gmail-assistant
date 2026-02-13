@@ -27,7 +27,7 @@ The v2 redesign replaced the Claude Code + MCP architecture with a pure Python F
 ### Development
 | Tool | Purpose |
 |------|---------|
-| `pytest` + `pytest-asyncio` | Test framework (49 tests) |
+| `pytest` + `pytest-asyncio` | Test framework (118 tests) |
 | `ruff` | Linting + formatting |
 | Docker + Compose | Containerized deployment |
 
@@ -53,21 +53,36 @@ src/
 │   ├── client.py              # Search, get, modify, draft, watch, history
 │   └── models.py              # Message, Thread, Draft, HistoryRecord
 ├── llm/                       # LLM interface
-│   ├── gateway.py             # LiteLLM-backed classify() + draft() + health_check()
+│   ├── gateway.py             # LiteLLM-backed classify() + draft() + agent_completion()
 │   └── config.py              # Model selection, token limits
 ├── sync/                      # Email synchronization
-│   ├── engine.py              # Gmail History API incremental sync
+│   ├── engine.py              # Gmail History API incremental sync + routing
 │   ├── webhook.py             # Webhook notification → job queue
 │   └── watch.py               # Gmail watch setup (Pub/Sub)
+├── agent/                     # Agent framework (tool-use loop)
+│   ├── loop.py                # LLM → tool calls → results → repeat until done
+│   ├── profile.py             # Config-driven agent profiles (model, prompt, tools)
+│   └── tools/
+│       ├── __init__.py        # Tool + ToolRegistry (OpenAI function-calling format)
+│       └── pharmacy.py        # Pharmacy tools (stubbed): search, reserve, reply
+├── routing/                   # Config-driven email routing
+│   ├── router.py              # Router: match rules → RoutingDecision (pipeline|agent)
+│   ├── rules.py               # Rule matching (sender, domain, forwarding, subject)
+│   └── preprocessors/
+│       ├── crisp.py           # Crisp helpdesk email parser
+│       └── default.py         # Pass-through for standard pipeline
 ├── lifecycle/                 # Email state machine
 │   └── manager.py             # Done, Sent, Waiting, Rework transitions (zero LLM)
 ├── tasks/                     # Job queue
-│   └── workers.py             # Async worker pool (claim-next, retry up to 3x)
+│   ├── workers.py             # Async worker pool (classify, draft, agent_process, etc.)
+│   └── scheduler.py           # Recurring tasks (watch renewal, fallback sync)
 ├── db/                        # Database layer
 │   ├── connection.py          # SQLite abstraction (async)
-│   ├── models.py              # Repository classes (User, Email, Job, Event, etc.)
+│   ├── models.py              # Repository classes (User, Email, Job, Event, AgentRun)
 │   └── migrations/
-│       └── 001_v2_schema.sql  # Full v2 schema (10 tables)
+│       ├── 001_v2_schema.sql  # Core schema (users, emails, jobs, events, etc.)
+│       ├── 002_llm_calls.sql  # LLM call logging
+│       └── 003_agent_runs.sql # Agent run tracking + llm_calls constraint update
 └── users/                     # User management
     ├── onboarding.py          # User setup + Gmail label provisioning
     └── settings.py            # Per-user settings (JSON key-value)
@@ -81,18 +96,29 @@ Gmail Pub/Sub Notification
     → SyncEngine.process_notification()
     → History API: fetch new messages since last historyId
     → For each new email:
-        → Create job(type=classify)
+        → Router.route(message_meta) — config-driven routing decision
+        → If route == "pipeline": create job(type=classify)       [default]
+        → If route == "agent":    create job(type=agent_process)  [config-matched]
 
-Worker Pool picks up classify job:
-    → RuleEngine.classify() — pattern matching (sender, subject, keywords)
-    → If low confidence: LLMGateway.classify() — Claude Haiku
-    → Store classification + create job(type=draft) if needs_response
-    → Apply Gmail labels (🤖 AI/Needs Response, etc.)
+Pipeline route (classify → draft):
+    Worker picks up classify job:
+        → RuleEngine.classify() — pattern matching (sender, subject, keywords)
+        → If low confidence: LLMGateway.classify() — Claude Haiku
+        → Store classification + create job(type=draft) if needs_response
+        → Apply Gmail labels (🤖 AI/Needs Response, etc.)
 
-Worker Pool picks up draft job:
-    → LLMGateway.draft() — Claude Sonnet
-    → Create Gmail draft (In-Reply-To headers)
-    → Apply 🤖 AI/Outbox label
+    Worker picks up draft job:
+        → LLMGateway.draft() — Claude Sonnet
+        → Create Gmail draft (In-Reply-To headers)
+        → Apply 🤖 AI/Outbox label
+
+Agent route (tool-use loop):
+    Worker picks up agent_process job:
+        → Preprocessor extracts structured data (e.g., Crisp email parser)
+        → AgentLoop.run(profile, message) — iterative tool-use loop:
+            → LLM decides action → execute tool → feed result back → repeat
+            → Until: final answer, max iterations, or error
+        → Agent run logged to agent_runs table for audit
 
 Rework loop (user-initiated):
     → User writes instructions above ✂️ marker in draft
@@ -111,7 +137,7 @@ Lifecycle transitions (deterministic, no LLM):
 2. **YAML** — `config/app.yml` (auth, database, LLM, sync, server)
 3. **Environment variables** — `GMA_` prefix overrides everything
 
-Key config classes: `AppConfig` → `AuthConfig`, `DatabaseConfig`, `LLMSettings`, `SyncConfig`, `ServerConfig`
+Key config classes: `AppConfig` → `AuthConfig`, `DatabaseConfig`, `LLMSettings`, `SyncConfig`, `ServerConfig`, `RoutingConfig`, `AgentConfig`
 
 ## Gmail Label System
 
@@ -130,12 +156,14 @@ Key config classes: `AppConfig` → `AuthConfig`, `DatabaseConfig`, `LLMSettings
 ## Key Design Decisions
 
 1. **Direct Gmail API** — No MCP overhead, direct `google-api-python-client` calls
-2. **LLM as utility** — Only used for classify + draft; everything else is deterministic code
+2. **LLM as utility** — Used for classify, draft, and agent tool-use loops
 3. **SQLite-first** — Simple default, PostgreSQL upgrade path via asyncpg
 4. **Job queue in DB** — No external queue (Redis/RabbitMQ); jobs table with claim-next pattern
 5. **Repository pattern** — Type-safe database operations, easier testing
 6. **Two-tier classification** — Rules catch obvious cases for free; LLM handles ambiguity
 7. **Immutable audit log** — `email_events` table records every transition
+8. **Config-driven routing** — YAML rules route emails to pipeline or agent processing
+9. **Agent framework** — Tool-use loop with pluggable tools, profiles, and preprocessors
 
 ## Coding Conventions
 

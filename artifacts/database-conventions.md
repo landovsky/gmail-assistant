@@ -5,9 +5,9 @@
 - **Upgrade path**: PostgreSQL via `asyncpg` (schema-compatible, not yet fully wired)
 - **Location**: `data/inbox.db` (configurable via `GMA_DB_SQLITE_PATH`)
 
-## Schema (10 Tables)
+## Schema
 
-Defined in `src/db/migrations/001_v2_schema.sql`.
+Defined in `src/db/migrations/` (3 migration files).
 
 ### Core Tables
 
@@ -31,7 +31,7 @@ UNIQUE(user_id, gmail_thread_id)
 
 **`jobs`** — Work queue
 ```sql
-id, job_type ('sync'|'classify'|'draft'|'cleanup'|'rework'),
+id, job_type ('sync'|'classify'|'draft'|'cleanup'|'rework'|'manual_draft'|'agent_process'),
 user_id (FK), payload (JSON), status ('pending'|'running'|'completed'|'failed'),
 attempts (0-3), max_attempts, error_message, created_at, started_at, completed_at
 ```
@@ -56,6 +56,22 @@ user_id + setting_key (PK), setting_value (JSON)
 **`sync_state`** — Per-user sync progress
 ```sql
 user_id (PK), last_history_id, last_sync_at, watch_resource_id, watch_expiration
+```
+
+**`llm_calls`** — LLM call logging (migration 002)
+```sql
+id, user_id, gmail_thread_id,
+call_type ('classify'|'draft'|'rework'|'context'|'agent'),
+model, system_prompt, user_message, response_text,
+prompt_tokens, completion_tokens, total_tokens, latency_ms, error, created_at
+```
+
+**`agent_runs`** — Agent execution tracking (migration 003)
+```sql
+id, user_id (FK), gmail_thread_id, profile,
+status ('running'|'completed'|'error'|'max_iterations'),
+tool_calls_log (JSON), final_message, iterations, error,
+created_at, completed_at
 ```
 
 ## Repository Pattern
@@ -85,6 +101,8 @@ class EmailRepository:
 - `EventRepository` — Append-only audit log
 - `LabelRepository` — Per-user Gmail label mappings
 - `SettingsRepository` — Per-user JSON settings
+- `LLMCallRepository` — LLM call logging (tokens, latency, errors)
+- `AgentRunRepository` — Agent run tracking (tool calls, iterations, status)
 
 ## Conventions
 

@@ -35,7 +35,7 @@ bd sync               # Sync with git
 
 ## Commands
 ```bash
-pytest                         # Run all tests (49 tests)
+pytest                         # Run all tests (118 tests)
 pytest tests/test_classify.py  # Run specific test file
 ruff check src/ tests/         # Lint
 ruff format src/ tests/        # Format
@@ -50,13 +50,20 @@ gmail-assistant                # CLI entry point (if pip installed)
 - `src/classify/` — Two-tier classification (rules → LLM)
 - `src/draft/` — Draft generation + rework loop
 - `src/gmail/` — Direct Gmail API client, OAuth, models
-- `src/llm/` — LiteLLM gateway (model-agnostic)
-- `src/sync/` — Gmail History API sync, Pub/Sub webhook
+- `src/llm/` — LiteLLM gateway (model-agnostic, includes agent_completion)
+- `src/sync/` — Gmail History API sync, Pub/Sub webhook, routing integration
 - `src/lifecycle/` — Email state machine (done, sent, waiting, rework)
-- `src/tasks/` — Async worker pool (claim-next job queue)
-- `src/db/` — SQLite connection, repository pattern, migrations
+- `src/tasks/` — Async worker pool (claim-next job queue, agent_process handler)
+- `src/db/` — SQLite connection, repository pattern, migrations (3 migrations)
 - `src/users/` — Onboarding, per-user settings
 - `src/config.py` — Pydantic config (env vars override YAML)
+- `src/agent/` — Agent framework: tool-use loop, tool registry, agent profiles
+- `src/routing/` — Config-driven email routing (rules, preprocessors)
+
+### Email Processing Flow
+Incoming email → Sync Engine → **Router** decides:
+- **Pipeline route** (default): classify → draft (existing flow)
+- **Agent route** (config-matched): preprocessor → agent loop (LLM + tools)
 
 ## Documentation
 Document important changes to keep them up to date.
