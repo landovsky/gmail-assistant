@@ -20,14 +20,24 @@ class ClassifyResult:
     reasoning: str
     detected_language: str = "cs"
 
+    VALID_CATEGORIES = {"needs_response", "action_required", "payment_request", "fyi", "waiting"}
+
     @classmethod
     def parse(cls, response: Any) -> ClassifyResult:
-        """Parse LLM classification response (expects JSON)."""
+        """Parse LLM classification response (expects JSON).
+
+        On parse failure, defaults to needs_response (safer to over-triage
+        than silently drop an email into FYI).
+        """
         content = response.choices[0].message.content.strip()
         try:
             data = json.loads(content)
+            category = data.get("category", "needs_response")
+            if category not in cls.VALID_CATEGORIES:
+                logger.warning("LLM returned unknown category %r, defaulting to needs_response", category)
+                category = "needs_response"
             return cls(
-                category=data.get("category", "fyi"),
+                category=category,
                 confidence=data.get("confidence", "medium"),
                 reasoning=data.get("reasoning", ""),
                 detected_language=data.get("detected_language", "cs"),
@@ -35,7 +45,7 @@ class ClassifyResult:
         except json.JSONDecodeError:
             logger.warning("Failed to parse LLM response as JSON: %s", content[:200])
             return cls(
-                category="fyi",
+                category="needs_response",
                 confidence="low",
                 reasoning=f"Parse error; raw: {content[:200]}",
             )
@@ -69,7 +79,7 @@ class LLMGateway:
         except Exception as e:
             logger.error("LLM classify call failed: %s", e)
             return ClassifyResult(
-                category="fyi",
+                category="needs_response",
                 confidence="low",
                 reasoning=f"LLM error: {e}",
             )

@@ -36,15 +36,22 @@ ACTION_PATTERNS = [
     r"please sign", r"please approve", r"approval required",
     r"signature required", r"please confirm",
     r"action required", r"urgent", r"asap",
-    r"podepsat|schválit|potvrdit|vyžaduje (akci|vašu akci)",
+    r"podep(sat|is|sán)|schvál(it|en)|potvrdi[tť]|vyžaduje (akci|vašu akci)",
+    # Meeting/appointment requests (EN + CS + DE)
+    r"meeting request", r"calendar invite", r"attend.*meeting",
+    r"schůzk[auyáě]", r"setkání", r"sejít se", r"potkat se",
+    r"žádost o schůzku",
+    r"termin", r"treffen",  # DE: appointment, meet
 ]
 
 # Automated/FYI indicators
 FYI_PATTERNS = [
     r"newsletter", r"automated", r"noreply", r"no-reply",
-    r"notification", r"alert", r"reminder", r"report",
+    r"notification", r"alert",
     r"unsubscribe", r"this is an automated message",
     r"do not reply", r"system message", r"mailer-daemon",
+    # "report" and "reminder" removed — too generic, cause false positives
+    # on legitimate emails like "can you send me the report?"
 ]
 
 # Needs response indicators
@@ -54,7 +61,10 @@ RESPONSE_PATTERNS = [
     r"please\s+(let|send|provide|check|review)",
     r"what.*think|your (opinion|thoughts|feedback)",
     r"can i.*you", r"do you.*think",
+    # Czech: question/request patterns
     r"co si myslíš", r"tvůj názor", r"co se ti jeví",
+    r"mohl[ai]?\s+bys", r"mohli\s+bychom", r"můžeš", r"můžete",
+    r"dej\s+mi\s+vědět", r"ozvi\s+se", r"napiš\s+mi",
 ]
 
 
