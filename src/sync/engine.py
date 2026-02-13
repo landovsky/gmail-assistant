@@ -132,6 +132,7 @@ class SyncEngine:
         done_label = label_ids.get("done")
         rework_label = label_ids.get("rework")
         waiting_label = label_ids.get("waiting")
+        needs_response_label = label_ids.get("needs_response")
 
         # New messages → queue classification
         for msg in record.messages_added:
@@ -158,6 +159,12 @@ class SyncEngine:
             if rework_label and rework_label in added_labels:
                 # User marked Rework → queue rework
                 self.jobs.enqueue("rework", user_id, {"message_id": msg_id})
+                result.label_changes += 1
+                result.jobs_queued += 1
+
+            if needs_response_label and needs_response_label in added_labels:
+                # User manually applied Needs Response → queue manual draft
+                self.jobs.enqueue("manual_draft", user_id, {"message_id": msg_id})
                 result.label_changes += 1
                 result.jobs_queued += 1
 

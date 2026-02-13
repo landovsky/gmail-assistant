@@ -10,7 +10,7 @@ The system never sends or deletes email. It only reads, labels, and creates draf
   - [Automatic inbox triage](#automatic-inbox-triage) — implemented
   - [Review and send an AI draft](#review-and-send-an-ai-draft) — implemented
   - [Revise a draft](#revise-a-draft) — implemented
-  - [Manually request a draft](#manually-request-a-draft) — not yet implemented
+  - [Manually request a draft](#manually-request-a-draft) — implemented
   - [Mark an email as done](#mark-an-email-as-done) — implemented
   - [Detect payment requests](#detect-payment-requests) — implemented
   - [Waiting thread re-triage](#waiting-thread-re-triage) — not yet implemented
@@ -60,7 +60,7 @@ When a draft isn't quite right:
 Up to 3 reworks per thread, then it moves to Action Required for you to handle manually.
 
 ### Manually request a draft
-> **Status:** Not yet implemented
+> **Status:** Implemented
 
 For emails the system didn't auto-classify as needing a response, or when you want to provide specific instructions upfront:
 
