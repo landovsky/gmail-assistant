@@ -1,0 +1,32 @@
+[
+  {
+    "filename": "artifacts/project-overview.md",
+    "description": "Comprehensive project overview: v2 architecture, component interactions, email processing pipeline, job queue design, Gmail label workflow, configuration hierarchy, and coding conventions",
+    "usage": "always"
+  },
+  {
+    "filename": "artifacts/testing-conventions.md",
+    "description": "Testing conventions with pytest and pytest-asyncio: test structure, async test patterns, mocking Gmail/LLM services, database fixtures, and running tests",
+    "usage": "decide"
+  },
+  {
+    "filename": "artifacts/api-conventions.md",
+    "description": "FastAPI REST API patterns: webhook endpoint for Gmail Pub/Sub, admin user management routes, briefing endpoint, request/response models, and error handling",
+    "usage": "decide"
+  },
+  {
+    "filename": "artifacts/database-conventions.md",
+    "description": "Database layer conventions: SQLite schema (10 tables), repository pattern, async operations with aiosqlite, migrations, audit logging via email_events table, and PostgreSQL upgrade path",
+    "usage": "decide"
+  },
+  {
+    "filename": "artifacts/classification-and-drafting.md",
+    "description": "Core domain logic: two-tier classification engine (rules then LLM), draft generation with rework loop, LiteLLM gateway configuration, prompt engineering patterns, and email lifecycle state machine",
+    "usage": "decide"
+  },
+  {
+    "filename": "artifacts/debugging-workflow-beads-grafana-bugsink-audit.md",
+    "description": "Production debugging workflow using BugSink error tracking, Grafana logs, email_events audit table, and beads task management. Systematic debugging process and fix implementation protocol",
+    "usage": "decide"
+  }
+]

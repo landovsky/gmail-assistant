@@ -19,6 +19,9 @@ build/
 *.egg
 .pytest_cache/
 
+# Virtualenv
+.venv/
+
 # IDE
 .vscode/
 .idea/
