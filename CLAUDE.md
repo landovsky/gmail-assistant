@@ -39,6 +39,8 @@ gmail-assistant                # CLI entry point (if pip installed)
 - `src/config.py` — Pydantic config (env vars override YAML)
 
 ### Documentation
+Document important changes to keep them up to date.
+
 Check `artifacts/registry.json` for detailed docs on:
 - Project overview and architecture
 - Testing conventions, API patterns, database conventions
@@ -54,6 +56,7 @@ Check `artifacts/registry.json` for detailed docs on:
 - Ruff for linting and formatting (line-length 100)
 - `email_events` audit table logs all state transitions
 - Commit messages: describe what was achieved/fixed (lowercase, no period)
+- when running as a remote agent, commit and push regularly to avoid data loss
 
 ### Environment Variables (prefix: `GMA_`)
 - `ANTHROPIC_API_KEY` — LLM access
