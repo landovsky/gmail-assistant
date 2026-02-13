@@ -56,7 +56,7 @@ class UserLabelAdmin(ModelView, model=UserLabelModel):
     can_edit = False
     can_delete = False
 
-    column_list = ["id", "user_id", "label_key", "gmail_label_id", "gmail_label_name"]
+    column_list = ["user_id", "label_key", "gmail_label_id", "gmail_label_name"]
     column_searchable_list = ["label_key", "gmail_label_name"]
     column_sortable_list = ["user_id", "label_key"]
 
@@ -72,7 +72,7 @@ class UserSettingAdmin(ModelView, model=UserSettingModel):
     can_edit = False
     can_delete = False
 
-    column_list = ["id", "user_id", "setting_key", "created_at"]
+    column_list = ["user_id", "setting_key", "setting_value"]
     column_searchable_list = ["setting_key"]
     column_sortable_list = ["user_id", "setting_key"]
 
@@ -89,7 +89,6 @@ class SyncStateAdmin(ModelView, model=SyncStateModel):
     can_delete = False
 
     column_list = [
-        "id",
         "user_id",
         "last_history_id",
         "last_sync_at",

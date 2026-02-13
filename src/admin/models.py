@@ -38,12 +38,10 @@ class UserLabelModel(Base):
 
     __tablename__ = "user_labels"
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    label_key = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    label_key = Column(String, primary_key=True)
     gmail_label_id = Column(String, nullable=False)
     gmail_label_name = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
     user = relationship("UserModel", back_populates="labels")
@@ -54,11 +52,9 @@ class UserSettingModel(Base):
 
     __tablename__ = "user_settings"
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    setting_key = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    setting_key = Column(String, primary_key=True)
     setting_value = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
     user = relationship("UserModel", back_populates="settings")
@@ -69,13 +65,12 @@ class SyncStateModel(Base):
 
     __tablename__ = "sync_state"
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    # user_id is the actual PK in the schema
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     last_history_id = Column(String)
     last_sync_at = Column(DateTime)
     watch_resource_id = Column(String)
     watch_expiration = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class EmailModel(Base):
@@ -111,8 +106,6 @@ class EmailModel(Base):
 
     # Relationships
     user = relationship("UserModel", back_populates="emails")
-    events = relationship("EmailEventModel", back_populates="email", foreign_keys="EmailEventModel.gmail_thread_id", primaryjoin="EmailModel.gmail_thread_id == foreign(EmailEventModel.gmail_thread_id)")
-    llm_calls = relationship("LLMCallModel", back_populates="email", foreign_keys="LLMCallModel.gmail_thread_id", primaryjoin="EmailModel.gmail_thread_id == foreign(LLMCallModel.gmail_thread_id)")
 
 
 class EmailEventModel(Base):
@@ -129,8 +122,7 @@ class EmailEventModel(Base):
     draft_id = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relationships (using foreign() for non-FK relationships)
-    email = relationship("EmailModel", foreign_keys=[gmail_thread_id], viewonly=True)
+    # No FK to emails — linked by gmail_thread_id at query time
 
 
 class LLMCallModel(Base):
@@ -155,7 +147,6 @@ class LLMCallModel(Base):
 
     # Relationships
     user = relationship("UserModel", back_populates="llm_calls")
-    email = relationship("EmailModel", foreign_keys=[gmail_thread_id], viewonly=True)
 
 
 class JobModel(Base):

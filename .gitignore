@@ -1,5 +1,7 @@
 .mcp.json
 data/inbox.db
+data/inbox.db-shm
+data/inbox.db-wal
 logs/
 config/communication_styles.yml
 config/contacts.yml
