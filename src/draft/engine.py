@@ -34,6 +34,7 @@ class DraftEngine:
         user_instructions: str | None = None,
         style_config: dict | None = None,
         related_context: str | None = None,
+        **llm_kwargs,
     ) -> str:
         """Generate a draft reply. Returns the full draft body with rework marker."""
         if style_config is None:
@@ -49,7 +50,7 @@ class DraftEngine:
             related_context,
         )
 
-        raw_draft = self.llm.draft(system_prompt, user_message)
+        raw_draft = self.llm.draft(system_prompt, user_message, **llm_kwargs)
         return wrap_draft_with_marker(raw_draft)
 
     def rework_draft(
@@ -62,6 +63,7 @@ class DraftEngine:
         rework_count: int,
         resolved_style: str,
         style_config: dict | None = None,
+        **llm_kwargs,
     ) -> tuple[str, str]:
         """Rework an existing draft based on user instructions.
 
@@ -86,7 +88,7 @@ class DraftEngine:
             rework_count,
         )
 
-        raw_draft = self.llm.draft(system_prompt, user_message)
+        raw_draft = self.llm.draft(system_prompt, user_message, is_rework=True, **llm_kwargs)
 
         # If this is the last allowed rework (count will become 3), add warning
         if rework_count + 1 >= 3:

@@ -55,10 +55,11 @@ class ContextGatherer:
         sender: str,
         subject: str,
         body: str,
+        **llm_kwargs,
     ) -> GatheredContext:
         """Gather related context from the mailbox. Never raises."""
         try:
-            queries = self._generate_queries(sender, subject, body)
+            queries = self._generate_queries(sender, subject, body, **llm_kwargs)
             if not queries:
                 return GatheredContext()
 
@@ -71,10 +72,10 @@ class ContextGatherer:
             logger.warning("Context gathering failed (non-fatal): %s", e)
             return GatheredContext(error=str(e))
 
-    def _generate_queries(self, sender: str, subject: str, body: str) -> list[str]:
+    def _generate_queries(self, sender: str, subject: str, body: str, **llm_kwargs) -> list[str]:
         """Use LLM to generate Gmail search queries."""
         user_message = build_context_user_message(sender, subject, body)
-        raw = self.llm.generate_context_queries(CONTEXT_SYSTEM_PROMPT, user_message)
+        raw = self.llm.generate_context_queries(CONTEXT_SYSTEM_PROMPT, user_message, **llm_kwargs)
 
         try:
             from src.llm.gateway import strip_code_fences

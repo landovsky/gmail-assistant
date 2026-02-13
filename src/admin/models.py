@@ -1,0 +1,176 @@
+"""SQLAlchemy models for admin UI — read-only view wrappers over existing tables."""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import DeclarativeBase, relationship
+
+
+class Base(DeclarativeBase):
+    """Base class for all SQLAlchemy models."""
+
+    pass
+
+
+class UserModel(Base):
+    """User model for admin UI."""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+    display_name = Column(String)
+    is_active = Column(Integer, default=1)
+    onboarded_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    labels = relationship("UserLabelModel", back_populates="user")
+    settings = relationship("UserSettingModel", back_populates="user")
+    emails = relationship("EmailModel", back_populates="user")
+    llm_calls = relationship("LLMCallModel", back_populates="user")
+
+
+class UserLabelModel(Base):
+    """User label mappings for admin UI."""
+
+    __tablename__ = "user_labels"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    label_key = Column(String, nullable=False)
+    gmail_label_id = Column(String, nullable=False)
+    gmail_label_name = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("UserModel", back_populates="labels")
+
+
+class UserSettingModel(Base):
+    """User settings for admin UI."""
+
+    __tablename__ = "user_settings"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    setting_key = Column(String, nullable=False)
+    setting_value = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("UserModel", back_populates="settings")
+
+
+class SyncStateModel(Base):
+    """Gmail sync state for admin UI."""
+
+    __tablename__ = "sync_state"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    last_history_id = Column(String)
+    last_sync_at = Column(DateTime)
+    watch_resource_id = Column(String)
+    watch_expiration = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EmailModel(Base):
+    """Email record for admin UI."""
+
+    __tablename__ = "emails"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    gmail_thread_id = Column(String, nullable=False)
+    gmail_message_id = Column(String, nullable=False)
+    sender_email = Column(String, nullable=False)
+    sender_name = Column(String)
+    subject = Column(String)
+    snippet = Column(String)
+    received_at = Column(DateTime)
+    classification = Column(String, nullable=False)
+    confidence = Column(String, default="medium")
+    reasoning = Column(Text)
+    detected_language = Column(String, default="cs")
+    resolved_style = Column(String, default="business")
+    message_count = Column(Integer, default=1)
+    status = Column(String, default="pending")
+    draft_id = Column(String)
+    rework_count = Column(Integer, default=0)
+    last_rework_instruction = Column(Text)
+    vendor_name = Column(String)
+    processed_at = Column(DateTime)
+    drafted_at = Column(DateTime)
+    acted_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("UserModel", back_populates="emails")
+    events = relationship("EmailEventModel", back_populates="email", foreign_keys="EmailEventModel.gmail_thread_id", primaryjoin="EmailModel.gmail_thread_id == foreign(EmailEventModel.gmail_thread_id)")
+    llm_calls = relationship("LLMCallModel", back_populates="email", foreign_keys="LLMCallModel.gmail_thread_id", primaryjoin="EmailModel.gmail_thread_id == foreign(LLMCallModel.gmail_thread_id)")
+
+
+class EmailEventModel(Base):
+    """Email event audit log for admin UI."""
+
+    __tablename__ = "email_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    gmail_thread_id = Column(String, nullable=False)
+    event_type = Column(String, nullable=False)
+    detail = Column(Text)
+    label_id = Column(String)
+    draft_id = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships (using foreign() for non-FK relationships)
+    email = relationship("EmailModel", foreign_keys=[gmail_thread_id], viewonly=True)
+
+
+class LLMCallModel(Base):
+    """LLM call log for admin UI."""
+
+    __tablename__ = "llm_calls"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    gmail_thread_id = Column(String)
+    call_type = Column(String, nullable=False)
+    model = Column(String, nullable=False)
+    system_prompt = Column(Text)
+    user_message = Column(Text)
+    response_text = Column(Text)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    latency_ms = Column(Integer, default=0)
+    error = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("UserModel", back_populates="llm_calls")
+    email = relationship("EmailModel", foreign_keys=[gmail_thread_id], viewonly=True)
+
+
+class JobModel(Base):
+    """Job queue for admin UI."""
+
+    __tablename__ = "jobs"
+
+    id = Column(Integer, primary_key=True)
+    job_type = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    payload = Column(Text)
+    status = Column(String, default="pending")
+    attempts = Column(Integer, default=0)
+    max_attempts = Column(Integer, default=3)
+    error_message = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
