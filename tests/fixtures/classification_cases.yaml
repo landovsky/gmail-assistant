@@ -1,0 +1,140 @@
+# Classification test cases — fed through ClassificationEngine.classify()
+#
+# Each case has: id, description, expected_category, sender_email, subject, body.
+# Other fields fall back to defaults below.
+#
+# Categories: needs_response, action_required, payment_request, fyi, waiting
+
+defaults:
+  sender_name: ""
+  snippet: ""
+  message_count: 1
+  blacklist: []
+  contacts_config: {}
+
+cases:
+  # ── needs_response ──────────────────────────────────────────────────────────
+  # All needs_response cases go to LLM (response patterns have matched=False)
+
+  - id: nr-01
+    description: "Czech colleague asking for a file (question mark + můžeš)"
+    expected_category: needs_response
+    sender_email: "jan.novak@firma.cz"
+    sender_name: "Jan Novák"
+    subject: "Soubor k projektu"
+    body: "Ahoj, můžeš mi poslat ten soubor k projektu Alfa? Díky!"
+
+  - id: nr-02
+    description: "Informal Czech without diacritics, no question mark (LLM-only)"
+    expected_category: needs_response
+    sender_email: "pavel.svoboda@firma.cz"
+    sender_name: "Pavel Svoboda"
+    subject: "Dodavka materialu"
+    body: "Hele dej mi vedet jestli to stihnes do patku, dik"
+
+  - id: nr-03
+    description: "English request for feedback, no question mark"
+    expected_category: needs_response
+    sender_email: "sarah.jones@partner.com"
+    sender_name: "Sarah Jones"
+    subject: "Q3 proposal"
+    body: "I'd appreciate your thoughts on the proposal we discussed last week."
+
+  # ── action_required ─────────────────────────────────────────────────────────
+
+  - id: ar-01
+    description: "Czech meeting request (rule: schůzka pattern)"
+    expected_category: action_required
+    sender_email: "petra.kralova@firma.cz"
+    sender_name: "Petra Králová"
+    subject: "Žádost o schůzku na pondělí"
+    body: "Ráda bych s tebou probrala výsledky auditu. Hodí se ti pondělí odpoledne?"
+
+  - id: ar-02
+    description: "English contract signing request (rule: please sign)"
+    expected_category: action_required
+    sender_email: "legal@partner.com"
+    sender_name: "Legal Department"
+    subject: "Contract for signature"
+    body: "Please sign the attached NDA and return it by Friday."
+
+  - id: ar-03
+    description: "German appointment request (rule: Termin)"
+    expected_category: action_required
+    sender_email: "hans.mueller@kunde.de"
+    sender_name: "Hans Müller"
+    subject: "Termin nächste Woche"
+    body: "Könnten wir nächste Woche einen Termin vereinbaren? Es geht um das neue Projekt."
+
+  # ── payment_request ─────────────────────────────────────────────────────────
+
+  - id: pr-01
+    description: "Czech invoice email (rule: faktura)"
+    expected_category: payment_request
+    sender_email: "ucetni@dodavatel.cz"
+    sender_name: "Účetní oddělení"
+    subject: "Faktura č. 2024-0892"
+    body: "V příloze zasíláme fakturu za dodané služby v měsíci říjnu."
+
+  - id: pr-02
+    description: "English invoice (rule: invoice)"
+    expected_category: payment_request
+    sender_email: "billing@saas-vendor.com"
+    sender_name: "Billing"
+    subject: "Invoice for November"
+    body: "Your invoice for consulting services is ready. Amount: $4,500."
+
+  - id: pr-03
+    description: "Czech payment with CZK amount (rule: Kč)"
+    expected_category: payment_request
+    sender_email: "info@servis.cz"
+    subject: "Vyúčtování opravy"
+    body: "Celková částka za opravu činí 15 000 Kč. Prosím o úhradu do 14 dnů."
+
+  # ── fyi ─────────────────────────────────────────────────────────────────────
+
+  - id: fyi-01
+    description: "Newsletter with unsubscribe link (rule: unsubscribe)"
+    expected_category: fyi
+    sender_email: "news@techblog.io"
+    subject: "This Week in AI"
+    body: "Top stories this week... To unsubscribe, click here."
+
+  - id: fyi-02
+    description: "System notification from noreply sender (rule: automated sender)"
+    expected_category: fyi
+    sender_email: "noreply@github.com"
+    subject: "New comment on issue #42"
+    body: "User xyz commented on your pull request."
+
+  - id: fyi-03
+    description: "Shipping notification from real sender, no FYI patterns (LLM-only)"
+    expected_category: fyi
+    sender_email: "logistika@dopravce.cz"
+    sender_name: "Dopravce s.r.o."
+    subject: "Stav zásilky"
+    body: "Váš balík č. CZ-20240892 byl dnes odeslán. Očekávané doručení: zítra do 18:00."
+
+  # ── waiting ─────────────────────────────────────────────────────────────────
+  # No rule patterns exist for waiting — all cases require LLM
+
+  - id: w-01
+    description: "Waiting for client reply to sent proposal (LLM-only)"
+    expected_category: waiting
+    sender_email: "me@firma.cz"
+    subject: "Re: Nabídka služeb"
+    body: "Poslal jsem nabídku klientovi minulý týden, zatím bez odpovědi."
+
+  - id: w-02
+    description: "English waiting for board approval (LLM-only)"
+    expected_category: waiting
+    sender_email: "me@company.com"
+    subject: "Re: Budget request"
+    body: "Submitted the budget request to the board last Monday. Still waiting for their decision."
+
+  - id: w-03
+    description: "Czech complaint filed, awaiting resolution (LLM-only)"
+    expected_category: waiting
+    sender_email: "me@firma.cz"
+    subject: "Re: Reklamace monitoru"
+    body: "Reklamace odeslána výrobci, čekám na vyjádření servisního oddělení."
