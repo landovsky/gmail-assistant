@@ -89,7 +89,10 @@ class WorkerPool:
         try:
             logger.info(
                 "Worker %d processing job %d: %s (user=%d)",
-                worker_id, job.id, job.job_type, job.user_id,
+                worker_id,
+                job.id,
+                job.job_type,
+                job.user_id,
             )
 
             user = await asyncio.to_thread(self.users.get_by_id, job.user_id)
@@ -110,9 +113,7 @@ class WorkerPool:
             elif job.job_type == "rework":
                 await self._handle_rework(job, gmail_client)
             else:
-                await asyncio.to_thread(
-                    self.jobs.fail, job.id, f"Unknown job type: {job.job_type}"
-                )
+                await asyncio.to_thread(self.jobs.fail, job.id, f"Unknown job type: {job.job_type}")
                 return
 
             await asyncio.to_thread(self.jobs.complete, job.id)
@@ -126,9 +127,7 @@ class WorkerPool:
 
     async def _handle_sync(self, job: Any, gmail_client: UserGmailClient) -> None:
         history_id = job.payload.get("history_id")
-        await asyncio.to_thread(
-            self.sync_engine.sync_user, job.user_id, gmail_client, history_id
-        )
+        await asyncio.to_thread(self.sync_engine.sync_user, job.user_id, gmail_client, history_id)
 
     async def _handle_classify(self, job: Any, gmail_client: UserGmailClient) -> None:
         message_id = job.payload.get("message_id")
@@ -190,14 +189,19 @@ class WorkerPool:
         # Log event
         await asyncio.to_thread(
             self.events.log,
-            job.user_id, msg.thread_id, "classified",
+            job.user_id,
+            msg.thread_id,
+            "classified",
             f"{result.category} ({result.confidence}, source={result.source})",
         )
 
         # Queue draft if needs_response
         if result.category == "needs_response":
             await asyncio.to_thread(
-                self.jobs.enqueue, "draft", job.user_id, {
+                self.jobs.enqueue,
+                "draft",
+                job.user_id,
+                {
                     "thread_id": msg.thread_id,
                     "message_id": msg.id,
                 },
@@ -205,7 +209,10 @@ class WorkerPool:
 
         logger.info(
             "Classified %s → %s (%s, %s)",
-            msg.thread_id, result.category, result.confidence, result.source,
+            msg.thread_id,
+            result.category,
+            result.confidence,
+            result.source,
         )
 
     async def _handle_draft(self, job: Any, gmail_client: UserGmailClient) -> None:
@@ -279,7 +286,9 @@ class WorkerPool:
         await asyncio.to_thread(self.emails.update_draft, job.user_id, thread_id, draft_id)
         await asyncio.to_thread(
             self.events.log,
-            job.user_id, thread_id, "draft_created",
+            job.user_id,
+            thread_id,
+            "draft_created",
             f"Draft created with style: {email.get('resolved_style', 'business')}",
             draft_id=draft_id,
         )
@@ -310,6 +319,8 @@ class WorkerPool:
         settings = await asyncio.to_thread(UserSettings, self.db, job.user_id)
         await asyncio.to_thread(
             self.lifecycle.handle_rework,
-            job.user_id, msg.thread_id, gmail_client,
+            job.user_id,
+            msg.thread_id,
+            gmail_client,
             style_config=settings.communication_styles,
         )

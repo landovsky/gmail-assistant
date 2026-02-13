@@ -13,6 +13,7 @@ Usage:
     # Load from database + run live Gmail search:
     bin/debug-context --thread-id 18e1234abcd
 """
+
 from __future__ import annotations
 
 import argparse
@@ -130,12 +131,14 @@ def run_live_search(
                 _result("Snippet", msg.snippet[:150] if msg.snippet else "(empty)")
                 print()
 
-                results.append({
-                    "thread_id": msg.thread_id,
-                    "sender": sender,
-                    "subject": msg.subject,
-                    "snippet": msg.snippet,
-                })
+                results.append(
+                    {
+                        "thread_id": msg.thread_id,
+                        "sender": sender,
+                        "subject": msg.subject,
+                        "snippet": msg.snippet,
+                    }
+                )
 
                 if len(results) >= 5:
                     break
@@ -196,7 +199,8 @@ def main() -> int:
     parser.add_argument("--body", default="", help="Email body text")
     parser.add_argument("--thread-id", help="Load from DB + run live Gmail search")
     parser.add_argument(
-        "--live", action="store_true",
+        "--live",
+        action="store_true",
         help="Also run Gmail search (requires OAuth credentials)",
     )
     args = parser.parse_args()
@@ -232,7 +236,10 @@ def main() -> int:
     _header("Email Input")
     _result("Sender", args.sender or "(empty)")
     _result("Subject", args.subject or "(empty)")
-    _result("Body", f"{args.body[:200]}{'…' if len(args.body) > 200 else ''}" if args.body else "(empty)")
+    _result(
+        "Body",
+        f"{args.body[:200]}{'…' if len(args.body) > 200 else ''}" if args.body else "(empty)",
+    )
 
     # Step 2: Generate queries
     _header("Query Generation (LLM)")

@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 
 from src.context.prompts import CONTEXT_SYSTEM_PROMPT, build_context_user_message
 from src.gmail.client import UserGmailClient
-from src.gmail.models import Message
 from src.llm.gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
@@ -34,8 +33,7 @@ class GatheredContext:
         lines = ["--- Related emails from your mailbox ---"]
         for i, thread in enumerate(self.related_threads, 1):
             lines.append(
-                f"{i}. From: {thread.get('sender', '?')} | "
-                f"Subject: {thread.get('subject', '?')}"
+                f"{i}. From: {thread.get('sender', '?')} | Subject: {thread.get('subject', '?')}"
             )
             snippet = thread.get("snippet", "")
             if snippet:
@@ -114,16 +112,18 @@ class ContextGatherer:
                     continue
 
                 seen_threads.add(msg.thread_id)
-                results.append({
-                    "thread_id": msg.thread_id,
-                    "sender": (
-                        f"{msg.sender_name} <{msg.sender_email}>"
-                        if msg.sender_name
-                        else msg.sender_email
-                    ),
-                    "subject": msg.subject,
-                    "snippet": msg.snippet,
-                })
+                results.append(
+                    {
+                        "thread_id": msg.thread_id,
+                        "sender": (
+                            f"{msg.sender_name} <{msg.sender_email}>"
+                            if msg.sender_name
+                            else msg.sender_email
+                        ),
+                        "subject": msg.subject,
+                        "snippet": msg.snippet,
+                    }
+                )
 
                 if len(results) >= max_results:
                     return results

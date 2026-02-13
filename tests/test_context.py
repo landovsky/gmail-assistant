@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from src.context.gatherer import ContextGatherer, GatheredContext
 from src.context.prompts import CONTEXT_SYSTEM_PROMPT, build_context_user_message
@@ -121,14 +118,10 @@ class TestSearchAndDeduplicate:
         gw = _mock_gateway()
         gatherer = ContextGatherer(gw)
 
-        messages = [
-            _make_message(f"m{i}", f"thread_{i}") for i in range(10)
-        ]
+        messages = [_make_message(f"m{i}", f"thread_{i}") for i in range(10)]
         client = _mock_gmail_client([messages])
 
-        results = gatherer._search_and_deduplicate(
-            client, ["query1"], exclude_thread_id="none"
-        )
+        results = gatherer._search_and_deduplicate(client, ["query1"], exclude_thread_id="none")
         assert len(results) == 5
 
     def test_search_failure_skips_query(self):
@@ -154,7 +147,9 @@ class TestGatheredContext:
         assert ctx.is_empty is True
 
     def test_is_empty_false_when_threads_present(self):
-        ctx = GatheredContext(related_threads=[{"thread_id": "t1", "sender": "a", "subject": "b", "snippet": "c"}])
+        ctx = GatheredContext(
+            related_threads=[{"thread_id": "t1", "sender": "a", "subject": "b", "snippet": "c"}]
+        )
         assert ctx.is_empty is False
 
     def test_format_for_prompt_empty(self):
@@ -162,10 +157,22 @@ class TestGatheredContext:
         assert ctx.format_for_prompt() == ""
 
     def test_format_for_prompt_structure(self):
-        ctx = GatheredContext(related_threads=[
-            {"thread_id": "t1", "sender": "Alice <alice@example.com>", "subject": "Project update", "snippet": "Here is the latest..."},
-            {"thread_id": "t2", "sender": "bob@example.com", "subject": "Invoice", "snippet": "Please pay"},
-        ])
+        ctx = GatheredContext(
+            related_threads=[
+                {
+                    "thread_id": "t1",
+                    "sender": "Alice <alice@example.com>",
+                    "subject": "Project update",
+                    "snippet": "Here is the latest...",
+                },
+                {
+                    "thread_id": "t2",
+                    "sender": "bob@example.com",
+                    "subject": "Invoice",
+                    "snippet": "Please pay",
+                },
+            ]
+        )
         result = ctx.format_for_prompt()
         assert "--- Related emails from your mailbox ---" in result
         assert "--- End related emails ---" in result
@@ -176,9 +183,11 @@ class TestGatheredContext:
 
     def test_format_for_prompt_truncates_snippet(self):
         long_snippet = "x" * 500
-        ctx = GatheredContext(related_threads=[
-            {"thread_id": "t1", "sender": "a", "subject": "b", "snippet": long_snippet},
-        ])
+        ctx = GatheredContext(
+            related_threads=[
+                {"thread_id": "t1", "sender": "a", "subject": "b", "snippet": long_snippet},
+            ]
+        )
         result = ctx.format_for_prompt()
         # Snippet should be capped at 200 chars
         assert "x" * 200 in result
@@ -198,7 +207,9 @@ class TestGather:
         gw = _mock_gateway('["from:alice@example.com", "project alpha"]')
         gatherer = ContextGatherer(gw)
 
-        messages_q1 = [_make_message("m1", "thread_1", sender_email="alice@example.com", subject="Old thread")]
+        messages_q1 = [
+            _make_message("m1", "thread_1", sender_email="alice@example.com", subject="Old thread")
+        ]
         messages_q2 = [_make_message("m2", "thread_2", subject="Alpha update")]
         client = _mock_gmail_client([messages_q1, messages_q2])
 

@@ -48,7 +48,11 @@ async def lifespan(app: FastAPI):
 
     # Start worker pool
     _worker_pool = WorkerPool(
-        db, gmail_service, classification_engine, draft_engine, config,
+        db,
+        gmail_service,
+        classification_engine,
+        draft_engine,
+        config,
         context_gatherer=context_gatherer,
     )
     _bg_tasks.append(asyncio.create_task(_worker_pool.start()))

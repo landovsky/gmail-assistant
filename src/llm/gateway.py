@@ -34,7 +34,9 @@ class ClassifyResult:
             data = json.loads(content)
             category = data.get("category", "needs_response")
             if category not in cls.VALID_CATEGORIES:
-                logger.warning("LLM returned unknown category %r, defaulting to needs_response", category)
+                logger.warning(
+                    "LLM returned unknown category %r, defaulting to needs_response", category
+                )
                 category = "needs_response"
             return cls(
                 category=category,
