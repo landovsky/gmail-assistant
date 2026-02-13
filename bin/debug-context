@@ -1,5 +1,11 @@
-#!/usr/bin/env python3
-"""Debug context gathering — generate search queries and find related threads.
+#!/bin/bash
+""":" # noqa
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VENV="$SCRIPT_DIR/../.venv/bin/python"
+if [ -x "$VENV" ]; then exec "$VENV" "$0" "$@"; fi
+exec python3 "$0" "$@"
+
+Debug context gathering — generate search queries and find related threads.
 
 Usage:
     # Manual input (LLM query generation only, no Gmail access):

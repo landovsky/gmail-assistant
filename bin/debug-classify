@@ -1,5 +1,11 @@
-#!/usr/bin/env python3
-"""Debug classification — run an email through the pipeline and see what happens.
+#!/bin/bash
+""":" # noqa
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VENV="$SCRIPT_DIR/../.venv/bin/python"
+if [ -x "$VENV" ]; then exec "$VENV" "$0" "$@"; fi
+exec python3 "$0" "$@"
+
+Debug classification — run an email through the pipeline and see what happens.
 
 Usage:
     # Interactive (prompts for input):
