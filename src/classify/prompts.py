@@ -6,7 +6,7 @@ Categories:
 - needs_response: Someone is asking a direct question, making a request, or the social context requires a reply (e.g. "Can you…?", "What do you think?", "Mohli bychom…?", "Könnten Sie…?")
 - action_required: I need to do something outside of email — attend a meeting, sign a document, approve something, show up somewhere, complete a task with a deadline (e.g. "Let's meet at…", "Potkal bychom se…", "žádost o schůzku", "Termin am…")
 - payment_request: Contains a payment request, invoice, billing statement, or amount due (e.g. "faktura", "invoice", "platba", "Rechnung")
-- fyi: Newsletter, automated notification, marketing, CC'd thread where I'm not directly addressed, or purely informational with no action needed
+- fyi: Newsletter, automated notification, CC'd thread where I'm not directly addressed - with no action needed (don't tag commercial emails and ads)
 - waiting: I sent the last message in this thread and am awaiting a reply
 
 Decision rules (in priority order):
