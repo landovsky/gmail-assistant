@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 
 from src.classify.prompts import CLASSIFY_SYSTEM_PROMPT, build_classify_user_message
-from src.classify.rules import RuleResult, classify_by_rules, resolve_communication_style
+from src.classify.rules import classify_by_rules, resolve_communication_style
 from src.llm.gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
