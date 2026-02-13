@@ -110,6 +110,21 @@ async def reset_database() -> dict:
     return {"deleted": deleted, "total": total}
 
 
+@router.post("/sync")
+async def trigger_sync(user_id: int = 1, full: bool = False) -> dict:
+    """Enqueue a sync job for a user.
+
+    Set full=true to clear sync state first, forcing a full inbox scan.
+    """
+    db = get_db()
+    if full:
+        SyncStateRepository(db).delete(user_id)
+        logger.info("Cleared sync state for user %d to force full sync", user_id)
+    jobs = JobRepository(db)
+    jobs.enqueue("sync", user_id, {"history_id": ""})
+    return {"queued": True, "user_id": user_id, "full": full}
+
+
 @router.get("/health")
 async def health() -> dict:
     return {"status": "ok"}

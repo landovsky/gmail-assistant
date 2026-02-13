@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Trigger a full sync — classifies all untagged inbox emails.
+# Requires the dev server to be running (bin/dev).
+#
+# Usage: bin/full-sync [--reset]
+#   --reset  Also clear jobs, emails, and events (full wipe)
+
+set -euo pipefail
+BASE="http://localhost:8000/api"
+
+if ! curl -s --fail "$BASE/health" > /dev/null 2>&1; then
+  echo "Error: dev server not running. Start it with: bin/dev"
+  exit 1
+fi
+
+if [[ "${1:-}" == "--reset" ]]; then
+  echo "Resetting database..."
+  curl -s -X POST "$BASE/reset" | python3 -m json.tool
+  echo
+fi
+
+echo "Triggering full sync..."
+curl -s -X POST "$BASE/sync?user_id=1&full=true" | python3 -m json.tool
+echo "Watch server logs for progress."

@@ -193,6 +193,9 @@ class SyncStateRepository:
             (resource_id, expiration, user_id),
         )
 
+    def delete(self, user_id: int) -> None:
+        self.db.execute_write("DELETE FROM sync_state WHERE user_id = ?", (user_id,))
+
 
 class EmailRepository:
     """Database operations for emails."""
