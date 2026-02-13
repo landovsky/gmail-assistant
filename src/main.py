@@ -6,6 +6,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 
 from src.api.admin import router as admin_router
@@ -70,10 +71,26 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutdown complete")
 
 
+def _init_sentry(dsn: str) -> None:
+    """Initialize Sentry SDK if a DSN is configured."""
+    if not dsn:
+        return
+    sentry_sdk.init(
+        dsn,
+        send_default_pii=True,
+        max_request_body_size="always",
+        traces_sample_rate=0,
+        send_client_reports=False,
+        auto_session_tracking=False,
+    )
+
+
 def create_app(config: AppConfig | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     if config is None:
         config = AppConfig.from_yaml()
+
+    _init_sentry(config.sentry_dsn)
 
     # Configure logging
     logging.basicConfig(

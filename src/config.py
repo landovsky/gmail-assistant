@@ -88,6 +88,9 @@ class AppConfig(BaseSettings):
     sync: SyncConfig = Field(default_factory=SyncConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
 
+    # Sentry
+    sentry_dsn: str = ""
+
     # Paths
     config_dir: Path = REPO_ROOT / "config"
     data_dir: Path = REPO_ROOT / "data"
