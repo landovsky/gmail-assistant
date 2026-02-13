@@ -1,0 +1,445 @@
+#!/usr/bin/env python3
+"""
+Debug tool for email classification issues.
+
+Usage:
+  # Classify a test email and show the decision path
+  bin/debug-email classify --subject "žádost o schůzku" --body "Mohli bychom se potkat v 17:00?"
+
+  # Classify with sender (to test blacklist / style)
+  bin/debug-email classify --subject "Meeting" --body "Can we meet?" --sender "john@example.com"
+
+  # Look up a thread in the local DB
+  bin/debug-email lookup --thread-id "18d..."
+
+  # Search DB by subject keyword
+  bin/debug-email search "schůzk"
+
+  # Show recent classifications from DB
+  bin/debug-email recent [--limit 20]
+
+  # Show audit trail for a thread
+  bin/debug-email events --thread-id "18d..."
+
+  # Re-classify an existing DB entry (dry-run, no label changes)
+  bin/debug-email reclassify --thread-id "18d..."
+"""
+
+import argparse
+import json
+import os
+import re
+import sqlite3
+import sys
+from pathlib import Path
+from typing import Optional
+
+# Add repo root to path so we can import classify-phase-b
+REPO_ROOT = Path(__file__).parent.parent
+DB_PATH = REPO_ROOT / "data" / "inbox.db"
+
+# Import classifier from classify-phase-b (no .py extension, hyphen in name)
+import importlib.util
+import importlib.machinery
+_loader = importlib.machinery.SourceFileLoader(
+    "classify_phase_b", str(REPO_ROOT / "bin" / "classify-phase-b")
+)
+_spec = importlib.util.spec_from_loader("classify_phase_b", _loader)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+GmailClassifier = _mod.GmailClassifier
+EmailRecord = _mod.EmailRecord
+
+
+def cmd_classify(args):
+    """Classify a test email and show the full decision path."""
+    classifier = GmailClassifier()
+
+    subject = args.subject or ""
+    body = args.body or ""
+    sender = args.sender or "test@example.com"
+    snippet = body[:100] if body else ""
+
+    record = EmailRecord(
+        thread_id="debug-test",
+        message_id="debug-test",
+        sender_email=sender,
+        sender_name="",
+        subject=subject,
+        snippet=snippet,
+        received_at="",
+        classification="",
+    )
+
+    content = (subject + " " + snippet + " " + body).lower()
+
+    print("=" * 70)
+    print("DEBUG: Email Classification Trace")
+    print("=" * 70)
+    print(f"  Subject: {subject}")
+    print(f"  Body:    {body[:200]}")
+    print(f"  Sender:  {sender}")
+    print(f"  Content: {content[:200]}...")
+    print()
+
+    # Check blacklist
+    if classifier._matches_blacklist(sender):
+        print(">>> BLACKLISTED — forced to 'fyi'")
+        print(f"    Matched blacklist pattern for: {sender}")
+        return
+
+    # Walk through each pattern category and show matches
+    categories = [
+        ("payment_request", [
+            r'invoice', r'faktura', r'faktúra',
+            r'payment', r'platba', r'zaplatit',
+            r'billing', r'account.*due', r'amount due',
+            r'total.*due', r'please pay', r'kč|czk|eur|usd|\$',
+            r'splatnost', r'due date'
+        ]),
+        ("action_required", [
+            r'please sign', r'please approve', r'approval required',
+            r'signature required', r'please confirm',
+            r'action required', r'urgent', r'asap',
+            r'podepsat|schválit|potvrdit|vyžaduje (akci|vašu akci)',
+            r'(let\'?s|can we|could we|shall we)\s+(meet|get together|catch up)',
+            r'(meeting|appointment|call)\s+(at|on|scheduled|tomorrow|today)',
+            r'invite you to\s+(a\s+)?(meeting|call|event)',
+            r'are you (free|available)\s+(on|at|for|tomorrow|today|this)',
+            r'schůzk[auyeě]',
+            r'(sejít|sejdeme|potkat|potkáme|potk[aá]me|setkání|setk[aá]me|sraz)',
+            r'(mohli|můžeme|můžeš)\s+(by(chom|ste|s)?)\s+(se\s+)?(sejít|potkat|setkat|srazit)',
+            r'(přijď|doraz|přiď)',
+            r'pozvánka',
+            r'(dnes|zítra|v\s+\d{1,2}[:.]\d{2})\b.*\b(potkat|sejít|setkat|sraz|schůzk)',
+        ]),
+        ("fyi", [
+            r'newsletter', r'automated', r'noreply', r'no-reply',
+            r'notification', r'alert', r'reminder',
+            r'(status|weekly|daily|monthly)\s+report',
+            r'unsubscribe', r'this is an automated message',
+            r'do not reply', r'system message', r'mailer-daemon'
+        ]),
+        ("needs_response", [
+            r'\?',
+            r'can you\s', r'could you\s', r'would you\s', r'will you\s',
+            r'please\s+(let|send|provide|check|review)',
+            r'what.*think|your (opinion|thoughts|feedback)',
+            r'can i.*you', r'do you.*think',
+            r'co si myslíš', r'tvůj názor', r'co se ti jeví',
+            r'mohl[ai]?\s+by(s|chom|ste)', r'můžeš\s',
+            r'dej(te)?\s+(mi\s+)?vědět', r'ozvi\s+se',
+            r'pošli\s', r'napiš\s', r'odpověz',
+        ]),
+    ]
+
+    winner = None
+    for category, patterns in categories:
+        matches = []
+        for p in patterns:
+            m = re.search(p, content)
+            if m:
+                matches.append((p, m.group()))
+
+        status = "MATCH" if matches else "no match"
+        marker = ">>>" if matches and winner is None else "   "
+
+        print(f"{marker} {category}: {status}")
+        for pat, matched_text in matches:
+            print(f"       pattern: {pat}")
+            print(f"       matched: '{matched_text}'")
+
+        if matches and winner is None:
+            winner = category
+
+    if winner is None:
+        winner = "fyi"
+        confidence = "low"
+        print()
+        print(">>> DEFAULT FALLBACK: fyi (low confidence)")
+    else:
+        confidence = "high" if winner != "needs_response" else "medium"
+
+    # Also run the actual classifier to confirm
+    actual_class, actual_conf = classifier._classify_email(record, body)
+
+    print()
+    print("-" * 70)
+    print(f"  Trace result:    {winner} ({confidence})")
+    print(f"  Classifier result: {actual_class} ({actual_conf})")
+
+    if winner != actual_class:
+        print(f"  WARNING: Trace and classifier disagree!")
+
+    # Show style if needs_response
+    if actual_class == "needs_response":
+        style = classifier._get_communication_style(sender)
+        print(f"  Resolved style:  {style}")
+
+    print("-" * 70)
+
+
+def cmd_lookup(args):
+    """Look up a thread in the local DB."""
+    if not DB_PATH.exists():
+        print(f"Database not found at {DB_PATH}")
+        return
+
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT * FROM emails WHERE gmail_thread_id = ?",
+        (args.thread_id,)
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        print(f"Thread {args.thread_id} not found in database")
+        conn.close()
+        return
+
+    print("=" * 70)
+    print(f"Thread: {row['gmail_thread_id']}")
+    print("=" * 70)
+    for key in row.keys():
+        print(f"  {key:25s}: {row[key]}")
+
+    # Also show events
+    cursor.execute(
+        "SELECT * FROM email_events WHERE gmail_thread_id = ? ORDER BY created_at",
+        (args.thread_id,)
+    )
+    events = cursor.fetchall()
+
+    if events:
+        print()
+        print("Events:")
+        for ev in events:
+            print(f"  [{ev['created_at']}] {ev['event_type']}: {ev['detail']}")
+
+    conn.close()
+
+
+def cmd_search(args):
+    """Search DB by subject keyword."""
+    if not DB_PATH.exists():
+        print(f"Database not found at {DB_PATH}")
+        return
+
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    keyword = f"%{args.keyword}%"
+    cursor.execute(
+        """SELECT gmail_thread_id, subject, sender_email, classification,
+                  confidence, status, processed_at
+           FROM emails
+           WHERE subject LIKE ? OR snippet LIKE ? OR sender_email LIKE ?
+           ORDER BY processed_at DESC
+           LIMIT ?""",
+        (keyword, keyword, keyword, args.limit)
+    )
+    rows = cursor.fetchall()
+
+    if not rows:
+        print(f"No emails matching '{args.keyword}'")
+        conn.close()
+        return
+
+    print(f"Found {len(rows)} matching email(s):")
+    print()
+    for row in rows:
+        print(f"  [{row['classification']:17s}] {row['subject'][:60]}")
+        print(f"    thread: {row['gmail_thread_id']}  from: {row['sender_email']}")
+        print(f"    confidence: {row['confidence']}  status: {row['status']}  at: {row['processed_at']}")
+        print()
+
+    conn.close()
+
+
+def cmd_recent(args):
+    """Show recent classifications."""
+    if not DB_PATH.exists():
+        print(f"Database not found at {DB_PATH}")
+        return
+
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """SELECT gmail_thread_id, subject, sender_email, classification,
+                  confidence, status, processed_at
+           FROM emails
+           ORDER BY processed_at DESC
+           LIMIT ?""",
+        (args.limit,)
+    )
+    rows = cursor.fetchall()
+
+    if not rows:
+        print("No emails in database")
+        conn.close()
+        return
+
+    print(f"Recent {len(rows)} classification(s):")
+    print()
+    for row in rows:
+        print(f"  [{row['classification']:17s}] ({row['confidence']:6s}) {row['subject'][:55]}")
+        print(f"    from: {row['sender_email']}")
+        print(f"    thread: {row['gmail_thread_id']}  status: {row['status']}")
+        print()
+
+    conn.close()
+
+
+def cmd_events(args):
+    """Show audit trail for a thread."""
+    if not DB_PATH.exists():
+        print(f"Database not found at {DB_PATH}")
+        return
+
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT * FROM email_events WHERE gmail_thread_id = ? ORDER BY created_at",
+        (args.thread_id,)
+    )
+    events = cursor.fetchall()
+
+    if not events:
+        print(f"No events for thread {args.thread_id}")
+        conn.close()
+        return
+
+    print(f"Events for thread {args.thread_id}:")
+    print()
+    for ev in events:
+        print(f"  [{ev['created_at']}] {ev['event_type']}")
+        if ev['detail']:
+            print(f"    detail: {ev['detail']}")
+        if ev['label_id']:
+            print(f"    label:  {ev['label_id']}")
+        if ev['draft_id']:
+            print(f"    draft:  {ev['draft_id']}")
+        print()
+
+    conn.close()
+
+
+def cmd_reclassify(args):
+    """Re-classify an existing DB entry (dry-run)."""
+    if not DB_PATH.exists():
+        print(f"Database not found at {DB_PATH}")
+        return
+
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT * FROM emails WHERE gmail_thread_id = ?",
+        (args.thread_id,)
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        print(f"Thread {args.thread_id} not found in database")
+        conn.close()
+        return
+
+    print(f"Current classification: {row['classification']} ({row['confidence']})")
+    print(f"Subject: {row['subject']}")
+    print(f"Snippet: {row['snippet']}")
+    print()
+
+    # Re-run classifier
+    classifier = GmailClassifier()
+    record = EmailRecord(
+        thread_id=row['gmail_thread_id'],
+        message_id=row['gmail_message_id'],
+        sender_email=row['sender_email'],
+        sender_name=row['sender_name'] or "",
+        subject=row['subject'] or "",
+        snippet=row['snippet'] or "",
+        received_at=row['received_at'] or "",
+        classification="",
+    )
+
+    new_class, new_conf = classifier._classify_email(record, "")
+
+    if new_class == row['classification']:
+        print(f"Re-classification: {new_class} ({new_conf}) — SAME")
+    else:
+        print(f"Re-classification: {new_class} ({new_conf}) — CHANGED from {row['classification']}")
+        print(f"  (dry-run, no DB or label changes made)")
+
+    conn.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Debug tool for email classification",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  bin/debug-email classify --subject "žádost o schůzku" --body "Potkat se v 17:00?"
+  bin/debug-email search "meeting"
+  bin/debug-email recent --limit 10
+  bin/debug-email lookup --thread-id "18d..."
+  bin/debug-email reclassify --thread-id "18d..."
+        """
+    )
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
+
+    # classify
+    p_classify = subparsers.add_parser("classify", help="Classify a test email")
+    p_classify.add_argument("--subject", "-s", default="", help="Email subject")
+    p_classify.add_argument("--body", "-b", default="", help="Email body")
+    p_classify.add_argument("--sender", default="test@example.com", help="Sender email")
+
+    # lookup
+    p_lookup = subparsers.add_parser("lookup", help="Look up thread in DB")
+    p_lookup.add_argument("--thread-id", "-t", required=True, help="Gmail thread ID")
+
+    # search
+    p_search = subparsers.add_parser("search", help="Search DB by keyword")
+    p_search.add_argument("keyword", help="Search term")
+    p_search.add_argument("--limit", type=int, default=20, help="Max results")
+
+    # recent
+    p_recent = subparsers.add_parser("recent", help="Show recent classifications")
+    p_recent.add_argument("--limit", type=int, default=20, help="Max results")
+
+    # events
+    p_events = subparsers.add_parser("events", help="Show audit trail for thread")
+    p_events.add_argument("--thread-id", "-t", required=True, help="Gmail thread ID")
+
+    # reclassify
+    p_reclass = subparsers.add_parser("reclassify", help="Re-classify a DB entry (dry-run)")
+    p_reclass.add_argument("--thread-id", "-t", required=True, help="Gmail thread ID")
+
+    args = parser.parse_args()
+
+    if args.command is None:
+        parser.print_help()
+        return
+
+    commands = {
+        "classify": cmd_classify,
+        "lookup": cmd_lookup,
+        "search": cmd_search,
+        "recent": cmd_recent,
+        "events": cmd_events,
+        "reclassify": cmd_reclassify,
+    }
+    commands[args.command](args)
+
+
+if __name__ == "__main__":
+    main()

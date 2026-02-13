@@ -213,6 +213,18 @@ class GmailClassifier:
             r'signature required', r'please confirm',
             r'action required', r'urgent', r'asap',
             r'podepsat|schválit|potvrdit|vyžaduje (akci|vašu akci)',
+            # Meeting / appointment requests (EN)
+            r'(let\'?s|can we|could we|shall we)\s+(meet|get together|catch up)',
+            r'(meeting|appointment|call)\s+(at|on|scheduled|tomorrow|today)',
+            r'invite you to\s+(a\s+)?(meeting|call|event)',
+            r'are you (free|available)\s+(on|at|for|tomorrow|today|this)',
+            # Meeting / appointment requests (CS)
+            r'schůzk[auyeě]',  # schůzka, schůzky, schůzku, schůzce, schůzek
+            r'(sejít|sejdeme|potkat|potkáme|potk[aá]me|setkání|setk[aá]me|sraz)',
+            r'(mohli|můžeme|můžeš)\s+(by(chom|ste|s)?)\s+(se\s+)?(sejít|potkat|setkat|srazit)',
+            r'(přijď|doraz|přiď)',  # come/arrive imperatives
+            r'pozvánka',  # invitation
+            r'(dnes|zítra|v\s+\d{1,2}[:.]\d{2})\b.*\b(potkat|sejít|setkat|sraz|schůzk)',
         ]
         if any(re.search(p, content) for p in action_patterns):
             return "action_required", "high"
@@ -220,7 +232,8 @@ class GmailClassifier:
         # Automated/FYI indicators
         fyi_patterns = [
             r'newsletter', r'automated', r'noreply', r'no-reply',
-            r'notification', r'alert', r'reminder', r'report',
+            r'notification', r'alert', r'reminder',
+            r'(status|weekly|daily|monthly)\s+report',  # Only match report in automated context
             r'unsubscribe', r'this is an automated message',
             r'do not reply', r'system message', r'mailer-daemon'
         ]
@@ -234,7 +247,11 @@ class GmailClassifier:
             r'please\s+(let|send|provide|check|review)',
             r'what.*think|your (opinion|thoughts|feedback)',
             r'can i.*you', r'do you.*think',
-            r'co si myslíš', r'tvůj názor', r'co se ti jeví'
+            # Czech request/question patterns
+            r'co si myslíš', r'tvůj názor', r'co se ti jeví',
+            r'mohl[ai]?\s+by(s|chom|ste)', r'můžeš\s',
+            r'dej(te)?\s+(mi\s+)?vědět', r'ozvi\s+se',
+            r'pošli\s', r'napiš\s', r'odpověz',
         ]
         if any(re.search(p, content) for p in response_patterns):
             return "needs_response", "medium"

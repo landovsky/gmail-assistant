@@ -87,7 +87,9 @@ Match signals in order of specificity:
 - "please sign", "signature required", "please approve"
 - "approval required", "please confirm"
 - "action required", "needs your approval"
-- Explicit request for action outside email
+- **Meeting/appointment requests**: "can we meet", "let's meet", "schůzka", "sejít se", "potkat se", "are you free on…"
+- **Event invitations**: calendar invite, call invitation, in-person meeting
+- Explicit request for action outside email (attend, visit, come to)
 
 ### fyi (high confidence)
 - "newsletter", "automated message", "notification"

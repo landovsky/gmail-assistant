@@ -120,10 +120,13 @@ INSERT INTO email_events (gmail_thread_id, event_type, detail, label_id, draft_i
 
 - Direct question addressed to me → needs_response
 - "Please confirm / approve / sign" → action_required
+- **Meeting or appointment request** (e.g. "can we meet", "schůzka", "potkat se", "are you free on…") → **action_required** (attending a meeting is an action outside email)
+- Invitation to an event, call, or in-person meeting → action_required
 - Attachment named *faktura*, *invoice*, amount + due date → payment_request
 - Automated sender, no-reply address, marketing, newsletter → fyi
 - I sent the last message, no new reply from others → waiting
 - When uncertain between needs_response and fyi, prefer needs_response
+- When uncertain between needs_response and action_required for meeting/event requests, prefer action_required
 - Low confidence → default to fyi as safe fallback
 
 ## Output
