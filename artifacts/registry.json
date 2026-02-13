@@ -16,7 +16,7 @@
   },
   {
     "filename": "artifacts/database-conventions.md",
-    "description": "Database layer conventions: SQLite schema (10 tables), repository pattern, async operations with aiosqlite, migrations, audit logging via email_events table, and PostgreSQL upgrade path",
+    "description": "Database layer conventions: SQLite schema (3 migrations, includes agent_runs and llm_calls tables), repository pattern, async operations with aiosqlite, audit logging via email_events table, and PostgreSQL upgrade path",
     "usage": "decide"
   },
   {

@@ -86,6 +86,7 @@ class Database:
         migrations = [
             "001_v2_schema.sql",
             "002_llm_calls.sql",
+            "003_agent_runs.sql",
         ]
 
         for migration_file in migrations:

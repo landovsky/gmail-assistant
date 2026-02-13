@@ -1,5 +1,7 @@
 # Plan: Agent Processing Architecture
 
+> **Status: IMPLEMENTED** — All phases completed. See `src/agent/`, `src/routing/`, and `tests/test_agent.py`. Pharmacy tools are stubbed; real API integration is a follow-up task.
+
 ## Context
 
 The Gmail Assistant currently handles a personal inbox with a rigid pipeline (classify → draft). A new use case has emerged: **pharmacy support emails** from patients via Crisp (forwarded to Gmail from info@dostupnost-leku.cz). These need agentic processing — Claude looks up drug availability via the dostupnost-leku.cz API, searches the web for drug info, and composes informed replies. Simple queries auto-send; complex ones go to draft for review.

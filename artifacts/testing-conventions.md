@@ -21,12 +21,16 @@ All async test functions are automatically detected — no need for `@pytest.mar
 
 ```
 tests/
+├── test_agent.py          # Agent loop, tool registry, routing, preprocessors (48 tests)
 ├── test_classify.py       # Classification prompts, engine wiring, LLM mock
 ├── test_rules.py          # Rule-based classification patterns
 ├── test_lifecycle.py      # Email state machine transitions
 ├── test_db.py             # Database operations, repository pattern
 ├── test_gmail_models.py   # Gmail API model parsing
-└── conftest.py            # Shared fixtures (if present)
+├── test_gmail_retry.py    # Gmail API retry logic
+├── test_llm_logging.py    # LLM call logging
+├── test_manual_draft.py   # Manual draft workflow
+└── conftest.py            # Shared fixtures
 ```
 
 ## Test Patterns

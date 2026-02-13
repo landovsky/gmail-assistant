@@ -30,3 +30,33 @@ server:
   host: "0.0.0.0"
   port: 8000
   log_level: info
+
+# ── Routing — config-driven rules for routing emails to pipelines or agents ──
+routing:
+  rules:
+    - name: pharmacy_support
+      match:
+        forwarded_from: "info@dostupnost-leku.cz"
+      route: agent
+      profile: pharmacy
+    - name: default
+      match:
+        all: true
+      route: pipeline
+
+# ── Agent profiles — system prompt, tools, model config per agent type ──
+agent:
+  profiles:
+    pharmacy:
+      model: "gemini/gemini-2.5-pro"
+      max_tokens: 4096
+      temperature: 0.3
+      max_iterations: 10
+      system_prompt_file: "config/prompts/pharmacy.txt"
+      tools:
+        - search_drugs
+        - manage_reservation
+        - web_search
+        - send_reply
+        - create_draft
+        - escalate

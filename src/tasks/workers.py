@@ -8,8 +8,9 @@ loop stays responsive.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.classify.engine import ClassificationEngine
 from src.classify.rules import resolve_communication_style
@@ -17,6 +18,7 @@ from src.config import AppConfig
 from src.context.gatherer import ContextGatherer
 from src.db.connection import Database
 from src.db.models import (
+    AgentRunRepository,
     EmailRecord,
     EmailRepository,
     EventRepository,
@@ -30,6 +32,11 @@ from src.gmail.client import GmailService, UserGmailClient
 from src.lifecycle.manager import LifecycleManager
 from src.sync.engine import SyncEngine
 from src.users.settings import UserSettings
+
+if TYPE_CHECKING:
+    from src.agent.loop import AgentLoop
+    from src.agent.profile import AgentProfile
+    from src.routing.router import Router
 
 logger = logging.getLogger(__name__)
 
@@ -45,19 +52,25 @@ class WorkerPool:
         draft_engine: DraftEngine,
         config: AppConfig,
         context_gatherer: ContextGatherer | None = None,
+        agent_loop: AgentLoop | None = None,
+        agent_profiles: dict[str, AgentProfile] | None = None,
+        router: Router | None = None,
     ):
         self.db = db
         self.gmail_service = gmail_service
         self.classification_engine = classification_engine
         self.draft_engine = draft_engine
         self.context_gatherer = context_gatherer
+        self.agent_loop = agent_loop
+        self.agent_profiles = agent_profiles or {}
         self.config = config
         self.jobs = JobRepository(db)
         self.users = UserRepository(db)
         self.emails = EmailRepository(db)
         self.events = EventRepository(db)
         self.labels_repo = LabelRepository(db)
-        self.sync_engine = SyncEngine(db, config.sync)
+        self.agent_runs = AgentRunRepository(db)
+        self.sync_engine = SyncEngine(db, config.sync, router=router)
         self.lifecycle = LifecycleManager(db, draft_engine)
         self._running = False
         self._concurrency = config.server.worker_concurrency
@@ -116,6 +129,8 @@ class WorkerPool:
                 await self._handle_rework(job, gmail_client)
             elif job.job_type == "manual_draft":
                 await self._handle_manual_draft(job, gmail_client)
+            elif job.job_type == "agent_process":
+                await self._handle_agent_process(job, gmail_client)
             else:
                 await asyncio.to_thread(self.jobs.fail, job.id, f"Unknown job type: {job.job_type}")
                 return
@@ -501,3 +516,103 @@ class WorkerPool:
         )
 
         logger.info("Created manual draft for thread %s", thread_id)
+
+    async def _handle_agent_process(self, job: Any, gmail_client: UserGmailClient) -> None:
+        """Handle agent-routed email processing.
+
+        Runs the agent loop with the configured profile and tools,
+        then logs the result to agent_runs for audit.
+        """
+        message_id = job.payload.get("message_id")
+        thread_id = job.payload.get("thread_id", "")
+        profile_name = job.payload.get("profile", "")
+
+        if not message_id:
+            return
+
+        if not self.agent_loop:
+            logger.error("Agent loop not configured, cannot process agent job %d", job.id)
+            return
+
+        profile = self.agent_profiles.get(profile_name)
+        if not profile:
+            logger.error("Unknown agent profile %r for job %d", profile_name, job.id)
+            return
+
+        # Get message content
+        msg = await asyncio.to_thread(gmail_client.get_message, message_id)
+        if not msg:
+            return
+
+        thread_id = thread_id or msg.thread_id
+
+        # Get thread for full context
+        thread = await asyncio.to_thread(gmail_client.get_thread, thread_id)
+        thread_body = ""
+        if thread and thread.messages:
+            thread_body = "\n---\n".join(m.body[:2000] for m in thread.messages)
+
+        # Preprocess based on profile (import here to avoid circular imports)
+        from src.routing.preprocessors.crisp import format_for_agent, parse_crisp_email
+
+        crisp_msg = parse_crisp_email(
+            sender_email=msg.sender_email,
+            subject=msg.subject,
+            body=thread_body or msg.body,
+            headers=msg.headers,
+        )
+        user_message = format_for_agent(crisp_msg, msg.subject)
+
+        # Create agent run record
+        run_id = await asyncio.to_thread(
+            self.agent_runs.create,
+            job.user_id,
+            thread_id,
+            profile_name,
+        )
+
+        # Run agent loop (blocking LLM calls pushed to thread)
+        result = await asyncio.to_thread(
+            self.agent_loop.run,
+            profile,
+            user_message,
+            user_id=job.user_id,
+            gmail_thread_id=thread_id,
+        )
+
+        # Serialize tool calls for audit
+        tool_calls_json = json.dumps([
+            {
+                "tool": tc.tool_name,
+                "arguments": tc.arguments,
+                "result": tc.result,
+                "iteration": tc.iteration,
+            }
+            for tc in result.tool_calls
+        ], ensure_ascii=False, default=str)
+
+        # Update agent run record
+        await asyncio.to_thread(
+            self.agent_runs.complete,
+            run_id,
+            status=result.status,
+            tool_calls_log=tool_calls_json,
+            final_message=result.final_message[:5000] if result.final_message else "",
+            iterations=result.iterations,
+            error=result.error,
+        )
+
+        # Log event
+        detail = f"Agent {profile_name}: {result.status} ({result.iterations} iterations, {len(result.tool_calls)} tool calls)"
+        await asyncio.to_thread(
+            self.events.log,
+            job.user_id,
+            thread_id,
+            "classified",
+            detail,
+        )
+
+        logger.info(
+            "Agent processed thread %s: %s (%d iterations, %d tool calls)",
+            thread_id, result.status, result.iterations, len(result.tool_calls),
+        )
