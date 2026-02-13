@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Extract user messages and error-indicator assistant messages from a Claude Code session.
+
+Usage:
+    bin/extract-session-messages <session-id>
+    bin/extract-session-messages <session-id> --all        # include all assistant messages
+    bin/extract-session-messages <session-id> --user-only  # only user messages
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+PROJECT_DIR = "-Users-tomas-git-ai-gmail-assistant"
+SESSIONS_BASE = Path.home() / ".claude" / "projects" / PROJECT_DIR
+
+STRIP_TAGS = [
+    "system-reminder",
+    "local-command-caveat",
+    "local-command-stdout",
+    "command-message",
+    "command-name",
+    "command-args",
+]
+
+ERROR_KEYWORDS = [
+    "error", "mistake", "fix", "wrong", "sorry", "correction", "issue",
+    "failed", "traceback", "bug", "problem", "retry", "workaround",
+    "actually", "instead", "should have", "missed", "oops", "broke",
+    "breaking",
+]
+
+
+def strip_tags(text: str) -> str:
+    for tag in STRIP_TAGS:
+        text = re.sub(rf"<{tag}>.*?</{tag}>", "", text, flags=re.DOTALL)
+    return text.strip()
+
+
+def extract_content(msg: dict) -> str:
+    content = msg.get("message", {}).get("content", "")
+    if isinstance(content, list):
+        parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+        return " ".join(parts)
+    return content if isinstance(content, str) else ""
+
+
+def has_error_keywords(text: str) -> bool:
+    lower = text.lower()
+    return any(kw in lower for kw in ERROR_KEYWORDS)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Extract messages from a Claude Code session")
+    parser.add_argument("session_id", help="session UUID (or partial match)")
+    parser.add_argument("--all", action="store_true", help="include all assistant messages")
+    parser.add_argument("--user-only", action="store_true", help="only user messages")
+    parser.add_argument("--max-len", type=int, default=500, help="max chars per message (default 500)")
+    args = parser.parse_args()
+
+    # Find session file (supports partial ID match)
+    matches = list(SESSIONS_BASE.glob(f"{args.session_id}*.jsonl"))
+    if not matches:
+        print(f"No session found matching: {args.session_id}", file=sys.stderr)
+        sys.exit(1)
+    if len(matches) > 1:
+        print(f"Multiple matches for {args.session_id}:", file=sys.stderr)
+        for m in matches:
+            print(f"  {m.stem}", file=sys.stderr)
+        sys.exit(1)
+
+    fpath = matches[0]
+    print(f"Session: {fpath.stem}")
+    print(f"Size: {fpath.stat().st_size // 1024}K")
+    print()
+
+    user_msgs = []
+    assistant_msgs = []
+
+    with open(fpath) as f:
+        for line in f:
+            try:
+                obj = json.loads(line)
+                t = obj.get("type")
+
+                if t == "user":
+                    msg = strip_tags(extract_content(obj))
+                    if msg and len(msg) > 10:
+                        user_msgs.append(msg)
+
+                elif t == "assistant" and not args.user_only:
+                    msg = extract_content(obj)
+                    if msg and len(msg) > 20:
+                        if args.all or has_error_keywords(msg):
+                            assistant_msgs.append(msg)
+
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+    maxlen = args.max_len
+
+    print(f"=== USER MESSAGES ({len(user_msgs)}) ===\n")
+    for i, m in enumerate(user_msgs):
+        print(f"[U{i}] {m[:maxlen]}")
+        print()
+
+    if not args.user_only:
+        label = "ALL ASSISTANT" if args.all else "ASSISTANT ERROR/FIX"
+        print(f"\n=== {label} MESSAGES ({len(assistant_msgs)}) ===\n")
+        for i, m in enumerate(assistant_msgs):
+            print(f"[A{i}] {m[:maxlen]}")
+            print()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""List all Claude Code sessions for this project with metadata.
+
+Usage:
+    bin/list-sessions              # all sessions, sorted by turns
+    bin/list-sessions --min-turns 20   # filter by minimum turns
+    bin/list-sessions --dev-only       # skip automated skill runs (< 7 turns)
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import time
+from glob import glob
+from pathlib import Path
+
+PROJECT_DIR = "-Users-tomas-git-ai-gmail-assistant"
+SESSIONS_BASE = Path.home() / ".claude" / "projects" / PROJECT_DIR
+
+STRIP_TAGS = [
+    "system-reminder",
+    "local-command-caveat",
+    "local-command-stdout",
+    "command-message",
+    "command-name",
+    "command-args",
+]
+
+
+def strip_tags(text: str) -> str:
+    for tag in STRIP_TAGS:
+        text = re.sub(rf"<{tag}>.*?</{tag}>", "", text, flags=re.DOTALL)
+    return text.strip()
+
+
+def extract_content(msg: dict) -> str:
+    content = msg.get("message", {}).get("content", "")
+    if isinstance(content, list):
+        parts = [p["text"] for p in content if isinstance(p, dict) and p.get("type") == "text"]
+        return " ".join(parts)
+    return content if isinstance(content, str) else ""
+
+
+def analyze_session(fpath: str) -> dict | None:
+    sid = os.path.basename(fpath).replace(".jsonl", "")
+    fstat = os.stat(fpath)
+
+    first_user = None
+    user_count = 0
+    assistant_count = 0
+
+    with open(fpath) as f:
+        for line in f:
+            try:
+                obj = json.loads(line)
+                t = obj.get("type")
+                if t == "user":
+                    user_count += 1
+                    if first_user is None:
+                        msg = strip_tags(extract_content(obj))
+                        if msg:
+                            first_user = msg
+                elif t == "assistant":
+                    assistant_count += 1
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+    if user_count == 0:
+        return None
+
+    return {
+        "sid": sid,
+        "ts": time.strftime("%Y-%m-%d %H:%M", time.localtime(fstat.st_mtime)),
+        "size": fstat.st_size,
+        "user_turns": user_count,
+        "assistant_turns": assistant_count,
+        "total_turns": user_count + assistant_count,
+        "summary": (first_user or "(automated/system)")[:120].replace("\n", " "),
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description="List Claude Code sessions")
+    parser.add_argument("--min-turns", type=int, default=0, help="minimum total turns")
+    parser.add_argument("--dev-only", action="store_true", help="skip sessions with < 7 turns")
+    parser.add_argument("--json", action="store_true", help="output as JSON")
+    args = parser.parse_args()
+
+    if not SESSIONS_BASE.exists():
+        print(f"Sessions directory not found: {SESSIONS_BASE}", file=sys.stderr)
+        sys.exit(1)
+
+    results = []
+    for fpath in glob(str(SESSIONS_BASE / "*.jsonl")):
+        info = analyze_session(fpath)
+        if info:
+            results.append(info)
+
+    results.sort(key=lambda x: -x["total_turns"])
+
+    min_turns = max(args.min_turns, 7 if args.dev_only else 0)
+    results = [r for r in results if r["total_turns"] >= min_turns]
+
+    if args.json:
+        print(json.dumps(results, indent=2))
+        return
+
+    print(f"{'Last Active':<18} {'Size':>6}  {'Turns':>5}  {'Session ID':<38} Summary")
+    print("-" * 130)
+    for r in results:
+        size_str = f"{r['size'] // 1024}K"
+        turns = f"{r['user_turns']}/{r['assistant_turns']}"
+        print(f"{r['ts']:<18} {size_str:>6}  {turns:>5}  {r['sid']:<38} {r['summary'][:50]}")
+
+
+if __name__ == "__main__":
+    main()
