@@ -88,7 +88,8 @@ class AppConfig(BaseSettings):
     sync: SyncConfig = Field(default_factory=SyncConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
 
-    # Sentry
+    # Environment & Sentry
+    environment: str = "development"
     sentry_dsn: str = ""
 
     # Paths

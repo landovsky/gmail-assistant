@@ -71,12 +71,13 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutdown complete")
 
 
-def _init_sentry(dsn: str) -> None:
-    """Initialize Sentry SDK if a DSN is configured."""
-    if not dsn:
+def _init_sentry(dsn: str, environment: str) -> None:
+    """Initialize Sentry SDK if a DSN is configured and not in development."""
+    if not dsn or environment == "development":
         return
     sentry_sdk.init(
         dsn,
+        environment=environment,
         send_default_pii=True,
         max_request_body_size="always",
         traces_sample_rate=0,
@@ -90,7 +91,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config is None:
         config = AppConfig.from_yaml()
 
-    _init_sentry(config.sentry_dsn)
+    _init_sentry(config.sentry_dsn, config.environment)
 
     # Configure logging
     logging.basicConfig(

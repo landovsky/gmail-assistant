@@ -26,4 +26,7 @@ services:
       - GMA_SYNC_FALLBACK_INTERVAL_MINUTES=${GMA_SYNC_FALLBACK_INTERVAL_MINUTES:-15}
       # Server
       - GMA_SERVER_LOG_LEVEL=${GMA_SERVER_LOG_LEVEL:-info}
+      # Environment & Sentry
+      - GMA_ENVIRONMENT=${GMA_ENVIRONMENT:-production}
+      - GMA_SENTRY_DSN=${GMA_SENTRY_DSN:-}
     restart: unless-stopped
