@@ -5,6 +5,7 @@ Each test case represents a real-world email pattern that must be classified cor
 
 For LLM (Tier 2) testing, see test_classify_llm.py which mocks the gateway.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -14,19 +15,22 @@ from src.classify.rules import classify_by_rules
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def classify(
     sender: str = "person@example.com",
     subject: str = "",
     body: str = "",
     snippet: str = "",
     blacklist: list[str] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> tuple[str, str, bool]:
     """Run classification and return (category, confidence, matched)."""
-    result = classify_by_rules(sender, subject, snippet, body, blacklist or [])
+    result = classify_by_rules(sender, subject, snippet, body, blacklist or [], headers=headers)
     return result.category, result.confidence, result.matched
 
 
 # ── Meeting / Appointment Requests → action_required ─────────────────────────
+
 
 class TestMeetingRequests:
     """Meeting/appointment requests should be action_required."""
@@ -105,6 +109,7 @@ class TestMeetingRequests:
 
 # ── Payment / Invoice → payment_request ──────────────────────────────────────
 
+
 class TestPaymentRequests:
     """Payment-related emails should be payment_request."""
 
@@ -163,6 +168,7 @@ class TestPaymentRequests:
 
 # ── Action Required (non-meeting) → action_required ──────────────────────────
 
+
 class TestActionRequired:
     """Non-meeting action requests should be action_required."""
 
@@ -210,6 +216,7 @@ class TestActionRequired:
 
 
 # ── FYI / Automated → fyi ───────────────────────────────────────────────────
+
 
 class TestFYI:
     """Newsletters, automated messages, and notifications should be fyi."""
@@ -282,6 +289,7 @@ class TestFYI:
 
 # ── Needs Response → needs_response (passed to LLM) ─────────────────────────
 
+
 class TestNeedsResponse:
     """Direct questions and requests should trigger needs_response."""
 
@@ -353,6 +361,7 @@ class TestNeedsResponse:
 
 # ── Ambiguous / No Match → falls through to LLM ─────────────────────────────
 
+
 class TestAmbiguousEmails:
     """Emails that don't match any rule pattern should fall through to LLM."""
 
@@ -380,6 +389,7 @@ class TestAmbiguousEmails:
 
 
 # ── Pattern Priority Tests ───────────────────────────────────────────────────
+
 
 class TestPatternPriority:
     """Payment > Action > FYI > Response — verify ordering."""
@@ -429,6 +439,7 @@ class TestPatternPriority:
 
 # ── Edge Cases ───────────────────────────────────────────────────────────────
 
+
 class TestEdgeCases:
     """Boundary conditions and unusual inputs."""
 
@@ -471,5 +482,188 @@ class TestEdgeCases:
             body="Pay immediately. Please approve.",
             blacklist=["*@spam.com"],
         )
+        assert cat == "fyi"
+        assert matched is True
+
+
+# ── Automated Email Detection via Headers ─────────────────────────────────
+
+
+class TestAutomatedHeaders:
+    """Automated emails detected via RFC headers should be fyi (no draft)."""
+
+    def test_list_unsubscribe_header(self):
+        """Emails with List-Unsubscribe are bulk mail → fyi."""
+        cat, conf, matched = classify(
+            sender="promo@shop.com",
+            subject="50% off sale!",
+            body="Check out our latest deals. Can you believe these prices?",
+            headers={"List-Unsubscribe": "<mailto:unsub@shop.com>"},
+        )
+        assert cat == "fyi"
+        assert conf == "high"
+        assert matched is True
+
+    def test_auto_submitted_header(self):
+        """RFC 3834 Auto-Submitted: auto-generated → fyi."""
+        cat, conf, matched = classify(
+            sender="system@company.com",
+            subject="Your report is ready",
+            body="Hi, can you review the attached report?",
+            headers={"Auto-Submitted": "auto-generated"},
+        )
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_auto_submitted_auto_replied(self):
+        """Auto-Submitted: auto-replied (out-of-office) → fyi."""
+        cat, _, matched = classify(
+            sender="colleague@company.com",
+            subject="Re: Project update",
+            body="I am currently out of office. Can you contact my deputy?",
+            headers={"Auto-Submitted": "auto-replied"},
+        )
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_auto_submitted_no_is_human(self):
+        """Auto-Submitted: no means human-sent — should NOT be treated as automated."""
+        cat, _, matched = classify(
+            sender="colleague@company.com",
+            subject="Quick question",
+            body="Can you send me the report?",
+            headers={"Auto-Submitted": "no"},
+        )
+        assert cat == "needs_response"
+        assert matched is False  # goes to LLM
+
+    def test_precedence_bulk(self):
+        """Precedence: bulk → automated → fyi."""
+        cat, _, matched = classify(
+            sender="updates@service.com",
+            subject="Weekly digest",
+            body="Here's what happened this week. What do you think?",
+            headers={"Precedence": "bulk"},
+        )
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_precedence_list(self):
+        """Precedence: list (mailing list) → fyi."""
+        cat, _, matched = classify(
+            sender="user@mailinglist.org",
+            subject="Re: Discussion topic",
+            body="Could you elaborate on that point?",
+            headers={"Precedence": "list"},
+        )
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_list_id_header(self):
+        """List-Id header (RFC 2919) → mailing list → fyi."""
+        cat, _, matched = classify(
+            sender="dev@lists.project.org",
+            subject="RFC: New API design",
+            body="What do you think about this approach?",
+            headers={"List-Id": "<dev.lists.project.org>"},
+        )
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_feedback_id_header(self):
+        """Feedback-ID (Google bulk tracking) → fyi."""
+        cat, _, matched = classify(
+            sender="hello@startup.com",
+            subject="We'd love your feedback",
+            body="Can you take 2 minutes to fill out this survey?",
+            headers={"Feedback-ID": "123:campaign:startup"},
+        )
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_x_auto_response_suppress(self):
+        """X-Auto-Response-Suppress → automated → fyi."""
+        cat, _, matched = classify(
+            sender="calendar@company.com",
+            subject="Your schedule for today",
+            body="You have 3 meetings today. Please review.",
+            headers={"X-Auto-Response-Suppress": "All"},
+        )
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_automated_with_payment_keeps_payment(self):
+        """Automated email with invoice content → payment_request (not fyi).
+
+        Payment/action categories don't generate drafts, so they're still useful.
+        """
+        cat, _, matched = classify(
+            sender="billing@saas.com",
+            subject="Invoice #2025-001",
+            body="Your invoice for January is ready. Amount due: $99.",
+            headers={"List-Unsubscribe": "<mailto:unsub@saas.com>"},
+        )
+        assert cat == "payment_request"
+        assert matched is True
+
+    def test_automated_with_action_keeps_action(self):
+        """Automated email with action content → action_required (not fyi)."""
+        cat, _, matched = classify(
+            sender="hr@company.com",
+            subject="Please approve time-off request",
+            body="John Smith has requested PTO. Please approve by Friday.",
+            headers={"Auto-Submitted": "auto-generated"},
+        )
+        assert cat == "action_required"
+        assert matched is True
+
+    def test_no_headers_no_effect(self):
+        """Without headers, classification works as before."""
+        cat, conf, matched = classify(
+            sender="colleague@company.com",
+            body="Can you help me with this?",
+        )
+        assert cat == "needs_response"
+        assert matched is False
+
+    def test_empty_headers_no_effect(self):
+        """Empty headers dict has no effect."""
+        cat, _, matched = classify(
+            sender="colleague@company.com",
+            body="Can you help me with this?",
+            headers={},
+        )
+        assert cat == "needs_response"
+        assert matched is False
+
+
+# ── Expanded Automated Sender Patterns ────────────────────────────────────
+
+
+class TestAutomatedSenderPatterns:
+    """Extended sender patterns for automated email detection."""
+
+    def test_do_not_reply(self):
+        cat, _, matched = classify(sender="do-not-reply@company.com")
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_donotreply(self):
+        cat, _, matched = classify(sender="donotreply@company.com")
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_postmaster(self):
+        cat, _, matched = classify(sender="postmaster@mail.company.com")
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_bounce(self):
+        cat, _, matched = classify(sender="bounce@mail.company.com")
+        assert cat == "fyi"
+        assert matched is True
+
+    def test_notification_singular(self):
+        cat, _, matched = classify(sender="notification@app.com")
         assert cat == "fyi"
         assert matched is True

@@ -38,11 +38,24 @@ class ClassificationEngine:
         message_count: int,
         blacklist: list[str],
         contacts_config: dict,
+        headers: dict[str, str] | None = None,
     ) -> Classification:
-        """Classify an email: rules first, then LLM if needed."""
+        """Classify an email: rules first, then LLM if needed.
+
+        When ``headers`` are provided, the rule engine can detect automated
+        emails via standard RFC headers (List-Unsubscribe, Auto-Submitted,
+        Precedence, etc.) and prevent unnecessary draft generation.
+        """
 
         # Tier 1: Rule-based (instant, free)
-        rule_result = classify_by_rules(sender_email, subject, snippet, body, blacklist)
+        rule_result = classify_by_rules(
+            sender_email,
+            subject,
+            snippet,
+            body,
+            blacklist,
+            headers=headers,
+        )
 
         if rule_result.matched and rule_result.confidence == "high":
             style = resolve_communication_style(sender_email, contacts_config)
@@ -63,12 +76,27 @@ class ClassificationEngine:
             ),
         )
 
+        category = llm_result.category
+        reasoning = llm_result.reasoning
+
+        # Safety net: if the rule engine detected automation signals but didn't
+        # match high-confidence (e.g. action/payment patterns weren't present),
+        # prevent the LLM from overriding to needs_response.
+        if rule_result.is_automated and category == "needs_response":
+            logger.info(
+                "LLM classified automated email as needs_response — overriding to fyi "
+                "(rule reason: %s)",
+                rule_result.reasoning,
+            )
+            category = "fyi"
+            reasoning = f"Automated email overridden from needs_response: {reasoning}"
+
         style = resolve_communication_style(sender_email, contacts_config)
 
         return Classification(
-            category=llm_result.category,
+            category=category,
             confidence=llm_result.confidence,
-            reasoning=llm_result.reasoning,
+            reasoning=reasoning,
             detected_language=llm_result.detected_language,
             resolved_style=style,
             source="llm",
