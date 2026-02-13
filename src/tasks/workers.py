@@ -483,7 +483,7 @@ class WorkerPool:
             self.events.log,
             job.user_id,
             thread_id,
-            "manual_draft_created",
+            "draft_created",
             detail,
             draft_id=draft_id,
         )
