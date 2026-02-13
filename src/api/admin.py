@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from src.db.connection import get_db
-from src.db.models import EmailRepository, LabelRepository, SyncStateRepository, UserRepository
+from src.db.models import EmailRepository, JobRepository, LabelRepository, SyncStateRepository, UserRepository
 from src.gmail.client import GmailService
 from src.sync.watch import WatchManager
 from src.users.onboarding import OnboardingService
