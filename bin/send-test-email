@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Send test emails to exercise the Gmail Assistant classification pipeline.
+#
+# Usage:
+#   bin/send-test-email [--kind=<kind>] [--style=<style>] [--recipient=<email>] [--count=N] [--delay-between=M]
+#
+# Options:
+#   --kind          Classification target: needs_response, action_required, payment_request, fyi, waiting
+#                   Omit for random selection per email.
+#   --style         Tone: formal, casual, terse, verbose, passive_aggressive, friendly
+#                   Omit for random selection per email.
+#   --recipient     Destination address (default: tomas@kopernici.cz)
+#   --count         Number of emails to send (default: 1)
+#   --delay-between Delay in minutes between emails when count > 1 (default: 1)
+#
+# Examples:
+#   bin/send-test-email                                    # one random email
+#   bin/send-test-email --kind=payment_request             # payment email, random style
+#   bin/send-test-email --count=5                          # 5 random emails, 1 min apart
+#   bin/send-test-email --count=3 --delay-between=2        # 3 random emails, 2 min apart
+#   bin/send-test-email --kind=fyi --style=formal --count=2
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# Defaults
+COUNT=1
+DELAY=1
+ARGS=()
+
+# Parse arguments
+for arg in "$@"; do
+  case "$arg" in
+    --count=*)
+      COUNT="${arg#*=}"
+      ;;
+    --delay-between=*)
+      DELAY="${arg#*=}"
+      ;;
+    *)
+      ARGS+=("$arg")
+      ;;
+  esac
+done
+
+# Build the Claude command args string
+CMD_ARGS="${ARGS[*]:-}"
+
+send_one() {
+  local i=$1
+  if [ "$COUNT" -gt 1 ]; then
+    echo "--- Sending email $i/$COUNT ---"
+  fi
+  echo "/send-test-email ${CMD_ARGS}" | claude -p --allowedTools "mcp__gmail__send_email"
+}
+
+for i in $(seq 1 "$COUNT"); do
+  send_one "$i"
+
+  # Delay between emails (skip after the last one)
+  if [ "$i" -lt "$COUNT" ]; then
+    echo ""
+    echo "Waiting ${DELAY} minute(s) before next email..."
+    sleep "$((DELAY * 60))"
+  fi
+done
+
+echo ""
+echo "Done. Sent $COUNT test email(s)."
