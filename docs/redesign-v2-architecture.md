@@ -1,0 +1,749 @@
+# Gmail Assistant v2 — Architecture Redesign
+
+## Problem Statement
+
+The current system uses **Claude Code + Gmail MCP** as its runtime. Every Gmail operation — searching, reading, labeling, drafting — flows through Claude's context window via MCP tool calls. This is:
+
+1. **Slow**: 590s to triage 12 emails (49s/email vs expected 1-2s). Every Gmail search is a full LLM round-trip.
+2. **Expensive**: Each MCP tool invocation burns input/output tokens on operations that need zero intelligence (fetching, labeling, DB writes).
+3. **Not parallelizable**: Claude processes MCP calls sequentially. No batching.
+4. **Single-user only**: MCP is an interactive single-session protocol. One OAuth token, one user.
+5. **Polling-based**: Runs every 30 minutes via launchd. Emails can wait up to 30 min for classification.
+
+### Core Insight
+
+Claude is being used as both the **runtime** (orchestration, I/O, state management) and the **brain** (classification, draft writing). The redesign separates these concerns:
+
+> **Code does mechanics. Claude does intelligence.**
+
+---
+
+## Design Principles
+
+1. **Gmail API direct** — All email operations via `google-api-python-client`, not MCP
+2. **Push, not poll** — Gmail Pub/Sub notifications for near real-time processing
+3. **LLM only for intelligence** — Claude API called only for classification and draft generation
+4. **Multi-user from day one** — Service account with domain-wide delegation
+5. **Preserve tagging logic** — The 8-label system, 5 categories, communication styles, rework loop all carry over unchanged
+
+---
+
+## What Stays, What Changes
+
+### Stays (unchanged)
+
+- 8 Gmail labels (`🤖 AI/Needs Response`, `Outbox`, `Rework`, `Action Required`, `Payment Requests`, `FYI`, `Waiting`, `Done`)
+- 5 classification categories (`needs_response`, `action_required`, `payment_request`, `fyi`, `waiting`)
+- Label lifecycle state machine (same flows, same transitions)
+- Communication styles (formal / business / informal) with same selection priority
+- Rework feedback loop with `✂️` marker (max 3 reworks)
+- Safety invariants: never send, never delete, always log, always require human review
+- Draft quality guidelines and style rules
+- Audit trail via `email_events`
+
+### Changes
+
+| Aspect | Current (v1) | Redesign (v2) |
+|--------|-------------|---------------|
+| Gmail access | Gmail MCP server | `google-api-python-client` direct |
+| Orchestration | Claude Code commands + bash scripts | Python async application |
+| LLM usage | Claude as runtime (does everything) | Claude API for classification + drafting only |
+| Sync model | Poll every 30 min (launchd) | Gmail Pub/Sub push (near real-time) |
+| Users | Single user, single OAuth token | Multi-user, service account impersonation |
+| Database | SQLite, no user scoping | PostgreSQL, all tables user-scoped |
+| Configuration | YAML files on disk | DB-stored per-user settings + org defaults |
+| Deployment | macOS CLI tool | Containerized service (Docker) |
+| Label management | Manual setup, IDs in YAML | Auto-provisioned on user onboarding |
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Google Workspace Admin                         │
+│            (authorizes domain-wide delegation once)               │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────────┐
+│                   Gmail Assistant v2 Service                     │
+│                                                                  │
+│  ┌──────────────┐   ┌──────────────┐   ┌─────────────────────┐ │
+│  │  Webhook      │   │  Scheduler   │   │  Admin API          │ │
+│  │  /webhook/    │   │  (watch      │   │  /api/users/        │ │
+│  │  gmail        │   │   renewal,   │   │  /api/settings/     │ │
+│  │              │   │   fallback   │   │  /api/briefing/     │ │
+│  └──────┬───────┘   │   sync)      │   └─────────────────────┘ │
+│         │           └──────┬───────┘                            │
+│         │                  │                                     │
+│  ┌──────▼──────────────────▼────────────────────────────────┐   │
+│  │                    Task Queue (Redis)                      │   │
+│  │  sync:{user}  classify:{user}  draft:{user}  cleanup:{u} │   │
+│  └──────┬───────────────┬──────────────┬──────────┬─────────┘   │
+│         │               │              │          │              │
+│  ┌──────▼───────┐ ┌─────▼──────┐ ┌────▼────┐ ┌──▼──────────┐  │
+│  │ Sync Engine  │ │ Classifier │ │ Drafter │ │ Lifecycle   │  │
+│  │              │ │            │ │         │ │ Manager     │  │
+│  │ history.list │ │ Rules +    │ │ Claude  │ │             │  │
+│  │ incremental  │ │ Claude     │ │ Sonnet  │ │ Done/Sent/  │  │
+│  │ sync         │ │ Haiku API  │ │ API     │ │ Waiting     │  │
+│  └──────┬───────┘ └─────┬──────┘ └────┬────┘ └──┬──────────┘  │
+│         │               │              │          │              │
+│  ┌──────▼───────────────▼──────────────▼──────────▼──────────┐  │
+│  │                  Gmail Service Layer                        │  │
+│  │  google-api-python-client + service account impersonation  │  │
+│  │  search | get_thread | modify_labels | create_draft | batch│  │
+│  └──────────────────────────┬────────────────────────────────┘  │
+│                              │                                   │
+│  ┌───────────────────────────▼───────────────────────────────┐  │
+│  │                     PostgreSQL                              │  │
+│  │  users | emails | email_events | user_settings |            │  │
+│  │  user_labels | sync_state                                   │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+         │                                        ▲
+         ▼                                        │
+┌─────────────────┐                    ┌──────────┴──────────┐
+│  Gmail API       │                    │  Google Cloud       │
+│  (per-user       │                    │  Pub/Sub            │
+│   impersonation) │                    │  (push topic)       │
+└─────────────────┘                    └─────────────────────┘
+         │                                        ▲
+         ▼                                        │
+┌─────────────────────────────────────────────────┘
+│  Gmail Mailboxes (all users in Workspace org)
+└──────────────────────────────────────────────────
+```
+
+---
+
+## Gmail Push Notifications (Real-Time Sync)
+
+Gmail supports real-time push via Google Cloud Pub/Sub. This replaces the 30-minute polling loop.
+
+### How it works
+
+1. **Setup** (once per user): Call `users.watch()` with a Pub/Sub topic and optional label filter
+2. **Renewal**: `watch()` expires after 7 days — a scheduled job renews daily for all active users
+3. **Notification**: When a mailbox changes, Gmail publishes a message to the Pub/Sub topic containing `{emailAddress, historyId}`
+4. **Processing**: Our webhook receives the notification, queues a sync job for that user
+5. **Incremental sync**: `history.list(startHistoryId=lastKnown)` returns only what changed since last sync
+6. **History events** tell us: messages added, messages deleted, labels added/removed
+
+### Latency improvement
+
+| | v1 (polling) | v2 (push) |
+|---|---|---|
+| New email → classified | Up to 30 min | ~5-15 seconds |
+| Classified → draft ready | +38s (sequential) | +3-5s (async) |
+| User marks Done → cleaned up | Up to 30 min | ~5-15 seconds |
+| User marks Rework → new draft | Up to 30 min | ~10-20 seconds |
+
+### Push notification flow
+
+```
+User receives email in Gmail
+    │
+    ▼
+Gmail publishes to Pub/Sub topic
+    │  {emailAddress: "user@org.com", historyId: 12345}
+    ▼
+Pub/Sub pushes to POST /webhook/gmail
+    │
+    ▼
+Webhook handler:
+    1. Decode & validate message
+    2. Look up user by emailAddress
+    3. Queue sync job: sync:{user_id}
+    │
+    ▼
+Sync worker:
+    1. Load user's lastHistoryId from DB
+    2. Call history.list(startHistoryId=lastHistoryId)
+    3. Process each history record:
+       │
+       ├─ messagesAdded (new email) → queue classify:{user_id, message_id}
+       ├─ labelsAdded "🤖 AI/Done" → queue cleanup:{user_id, thread_id}
+       ├─ labelsAdded "🤖 AI/Rework" → queue rework:{user_id, thread_id}
+       ├─ labelsRemoved (draft deleted = sent?) → check & update status
+       └─ messagesDeleted → check if draft (sent detection)
+    │
+    4. Update lastHistoryId in DB
+```
+
+### Fallback: scheduled full sync
+
+Push notifications can occasionally be missed (Pub/Sub delivery is at-least-once, not exactly-once, and watch() can lapse). A scheduled job runs every 15-30 minutes as a safety net:
+
+- For each user: compare DB state against Gmail label state
+- Classify any emails that were missed
+- This is lightweight since most work is already done by push
+
+---
+
+## Component Design
+
+### 1. Gmail Service Layer
+
+Wraps `google-api-python-client` with service account impersonation.
+
+```python
+class GmailService:
+    """Direct Gmail API client with per-user impersonation."""
+
+    def __init__(self, service_account_creds: str):
+        self.base_creds = service_account.Credentials.from_service_account_file(
+            service_account_creds,
+            scopes=['https://www.googleapis.com/auth/gmail.modify'],
+        )
+
+    def for_user(self, user_email: str) -> 'UserGmailClient':
+        """Create an impersonated client for a specific user."""
+        delegated = self.base_creds.with_subject(user_email)
+        service = build('gmail', 'v1', credentials=delegated)
+        return UserGmailClient(service, user_email)
+
+
+class UserGmailClient:
+    """Gmail operations for a single user."""
+
+    def search(self, query: str, max_results: int = 50) -> list[Message]: ...
+    def get_thread(self, thread_id: str) -> Thread: ...
+    def get_message(self, message_id: str) -> Message: ...
+    def modify_labels(self, message_id: str, add: list[str], remove: list[str]): ...
+    def batch_modify_labels(self, message_ids: list[str], add: list[str], remove: list[str]): ...
+    def create_draft(self, thread_id: str, to: str, subject: str, body: str) -> str: ...
+    def trash_draft(self, draft_id: str): ...
+    def get_draft(self, draft_id: str) -> Draft | None: ...
+    def list_history(self, start_history_id: str, label_id: str = None) -> list[History]: ...
+    def watch(self, topic_name: str, label_ids: list[str] = None) -> WatchResponse: ...
+    def stop_watch(self): ...
+    def get_or_create_label(self, name: str, **kwargs) -> str: ...
+```
+
+**Key differences from MCP approach:**
+- Direct API calls — no LLM round-trip per operation
+- Batch API support — modify 50 messages in one HTTP call
+- Async support — multiple users processed concurrently
+- Thread-level operations — get full thread in one call (not message-by-message)
+- Proper error handling with retries and exponential backoff
+
+### 2. Sync Engine
+
+Manages incremental sync via `history.list()`.
+
+```python
+class SyncEngine:
+    """Incremental mailbox sync using Gmail History API."""
+
+    def sync_user(self, user_id: int, history_id: str) -> SyncResult:
+        """Process all changes since last known historyId."""
+        # 1. Fetch history records
+        # 2. Categorize changes (new messages, label changes, deletions)
+        # 3. Dispatch to appropriate handlers
+        # 4. Update stored historyId
+
+    def full_sync(self, user_id: int) -> SyncResult:
+        """Full sync fallback — scan inbox for unclassified emails."""
+        # Used on first run or when history gap is too large
+```
+
+**Sync state** stored per user:
+
+```sql
+CREATE TABLE sync_state (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    last_history_id TEXT NOT NULL,
+    last_sync_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    watch_expiration TIMESTAMPTZ,
+    watch_resource_id TEXT
+);
+```
+
+### 3. Classification Engine
+
+Two-tier classification: fast rule-based pre-filter, then LLM for ambiguous cases.
+
+```python
+class ClassificationEngine:
+    """Classifies emails using rules + Claude Haiku."""
+
+    def classify(self, email: Email, user_settings: UserSettings) -> Classification:
+        # Tier 1: Rule-based (instant, free)
+        result = self._rule_based_classify(email, user_settings)
+        if result.confidence == 'high':
+            return result
+
+        # Tier 2: LLM-based (Claude Haiku API call)
+        return self._llm_classify(email, user_settings)
+
+    def _rule_based_classify(self, email, settings) -> Classification:
+        """Deterministic rules — blacklist, payment patterns, FYI signals."""
+        # Blacklist match → fyi (high confidence)
+        # Payment keywords → payment_request (high)
+        # No-reply/automated sender → fyi (high)
+        # Action keywords → action_required (high)
+        # Everything else → pass to LLM
+
+    def _llm_classify(self, email, settings) -> Classification:
+        """Call Claude Haiku for nuanced classification."""
+        # Single API call with email content + classification prompt
+        # Returns: category, confidence, reasoning, detected_language
+```
+
+**LLM call structure** — replaces the current approach where Claude reads the prompt from `.claude/commands/inbox-triage.md`, invokes MCP tools, thinks about it, etc. Instead:
+
+```python
+response = anthropic_client.messages.create(
+    model="claude-haiku-4-5-20251001",
+    max_tokens=256,
+    system="You are an email classifier. Classify into exactly ONE category...",
+    messages=[{
+        "role": "user",
+        "content": f"Subject: {email.subject}\nFrom: {email.sender}\n\n{email.body[:2000]}"
+    }],
+    # Structured output via tool_use for reliable parsing
+)
+```
+
+**Batching opportunity**: For the scheduled full-sync fallback, batch 5-10 emails into a single Claude call with structured output per email.
+
+### 4. Draft Engine
+
+Generates reply drafts via Claude Sonnet API.
+
+```python
+class DraftEngine:
+    """Generates email drafts using Claude Sonnet."""
+
+    def generate_draft(self, email: Email, style: CommunicationStyle,
+                       user_settings: UserSettings,
+                       rework_instruction: str = None) -> str:
+        """Generate a draft reply."""
+        # Build prompt with:
+        # - Email thread context
+        # - Communication style rules + examples
+        # - User's sign-off
+        # - Rework instruction (if rework)
+        # - Language preference
+        #
+        # Call Claude Sonnet API
+        # Return formatted draft body with ✂️ marker
+
+    def create_gmail_draft(self, user_client: UserGmailClient,
+                           thread_id: str, draft_body: str) -> str:
+        """Create the draft in Gmail and return draft_id."""
+```
+
+### 5. Lifecycle Manager
+
+Handles label state machine transitions — previously done by Claude reading cleanup.md.
+
+```python
+class LifecycleManager:
+    """Manages email lifecycle transitions."""
+
+    def handle_done(self, user_id: int, thread_id: str):
+        """User marked thread as Done → strip AI labels, archive."""
+        # 1. Get all messages in thread
+        # 2. Remove all 🤖 AI/* labels except Done
+        # 3. Remove INBOX label (archive)
+        # 4. Update DB status → 'archived'
+        # 5. Log event
+
+    def handle_sent_detection(self, user_id: int, thread_id: str, draft_id: str):
+        """Draft disappeared → check if sent."""
+        # 1. Try to fetch draft by ID
+        # 2. If gone, check for sent message in thread
+        # 3. If sent: remove Outbox label, update DB status → 'sent'
+        # 4. Log event
+
+    def handle_waiting_retriage(self, user_id: int, thread_id: str):
+        """New reply arrived on a Waiting thread → reclassify."""
+        # 1. Remove Waiting label
+        # 2. Queue for classification
+        # 3. Log event
+
+    def handle_rework(self, user_id: int, thread_id: str):
+        """User marked Rework → extract instructions, regenerate draft."""
+        # 1. Check rework_count (max 3)
+        # 2. Fetch current draft
+        # 3. Extract instructions above ✂️ marker
+        # 4. Call DraftEngine with rework_instruction
+        # 5. Trash old draft, create new one
+        # 6. Move label: Rework → Outbox (or Action Required if 3rd rework)
+        # 7. Update DB
+```
+
+**Key improvement**: These are all deterministic operations that never needed Claude's reasoning. They were only routed through Claude because MCP was the only way to access Gmail. Now they're fast, reliable Python code.
+
+---
+
+## Multi-User Data Model
+
+### Database: PostgreSQL
+
+```sql
+-- Users table (new)
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,           -- user@org.com
+    display_name TEXT,
+    is_active BOOLEAN DEFAULT true,
+    onboarded_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Per-user Gmail label IDs (replaces config/label_ids.yml)
+CREATE TABLE user_labels (
+    user_id INTEGER REFERENCES users(id),
+    label_key TEXT NOT NULL,              -- 'needs_response', 'outbox', etc.
+    gmail_label_id TEXT NOT NULL,         -- 'Label_34' (unique per Gmail account)
+    gmail_label_name TEXT NOT NULL,       -- '🤖 AI/Needs Response'
+    PRIMARY KEY (user_id, label_key)
+);
+
+-- Per-user settings (replaces config/*.yml)
+CREATE TABLE user_settings (
+    user_id INTEGER REFERENCES users(id),
+    setting_key TEXT NOT NULL,
+    setting_value JSONB NOT NULL,
+    PRIMARY KEY (user_id, setting_key)
+);
+-- setting_key examples:
+--   'communication_styles' → full styles config as JSON
+--   'contacts' → style overrides, domain overrides, blacklist
+--   'sign_off_name' → "Tomáš"
+--   'default_language' → "cs"
+
+-- Sync state per user (new)
+CREATE TABLE sync_state (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    last_history_id TEXT NOT NULL,
+    last_sync_at TIMESTAMPTZ DEFAULT NOW(),
+    watch_expiration TIMESTAMPTZ,
+    watch_resource_id TEXT
+);
+
+-- Emails table (+ user_id column)
+CREATE TABLE emails (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    gmail_thread_id TEXT NOT NULL,
+    gmail_message_id TEXT NOT NULL,
+    sender_email TEXT NOT NULL,
+    sender_name TEXT,
+    subject TEXT,
+    snippet TEXT,
+    received_at TIMESTAMPTZ,
+
+    classification TEXT NOT NULL CHECK (classification IN (
+        'needs_response', 'action_required', 'payment_request', 'fyi', 'waiting'
+    )),
+    confidence TEXT DEFAULT 'medium' CHECK (confidence IN ('high', 'medium', 'low')),
+    reasoning TEXT,
+    detected_language TEXT DEFAULT 'cs',
+    resolved_style TEXT DEFAULT 'business',
+    message_count INTEGER DEFAULT 1,
+
+    status TEXT DEFAULT 'pending' CHECK (status IN (
+        'pending', 'drafted', 'rework_requested', 'sent', 'skipped', 'archived'
+    )),
+    draft_id TEXT,
+    rework_count INTEGER DEFAULT 0,
+    last_rework_instruction TEXT,
+
+    processed_at TIMESTAMPTZ DEFAULT NOW(),
+    drafted_at TIMESTAMPTZ,
+    acted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+    UNIQUE(user_id, gmail_thread_id)
+);
+
+CREATE INDEX idx_emails_user_classification ON emails(user_id, classification);
+CREATE INDEX idx_emails_user_status ON emails(user_id, status);
+
+-- Audit log (+ user_id column)
+CREATE TABLE email_events (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    gmail_thread_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK (event_type IN (
+        'classified', 'label_added', 'label_removed',
+        'draft_created', 'draft_trashed', 'draft_reworked',
+        'sent_detected', 'archived', 'rework_limit_reached',
+        'waiting_retriaged', 'error'
+    )),
+    detail TEXT,
+    label_id TEXT,
+    draft_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_events_user_thread ON email_events(user_id, gmail_thread_id);
+```
+
+---
+
+## Authentication: Domain-Wide Delegation
+
+### Setup (org admin does this once)
+
+1. Create a GCP project with Gmail API enabled
+2. Create a **service account** (no user interaction needed)
+3. In Google Workspace Admin Console → Security → API Controls → Domain-wide Delegation:
+   - Add the service account's Client ID
+   - Grant scopes: `https://www.googleapis.com/auth/gmail.modify`
+4. Configure the service account key in the Gmail Assistant service
+
+### How impersonation works
+
+```python
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+
+creds = service_account.Credentials.from_service_account_file(
+    'service-account-key.json',
+    scopes=['https://www.googleapis.com/auth/gmail.modify'],
+)
+
+# Impersonate user@org.com
+delegated_creds = creds.with_subject('user@org.com')
+gmail = build('gmail', 'v1', credentials=delegated_creds)
+
+# Now all API calls act as user@org.com
+messages = gmail.users().messages().list(userId='me', q='in:inbox').execute()
+```
+
+No per-user OAuth flow. No token storage. The service account credential is the only secret.
+
+---
+
+## User Onboarding Flow
+
+When a new user is added (by admin or self-service):
+
+1. **Create user record** in `users` table
+2. **Provision labels**: For each of the 8 AI labels, call `gmail.users().labels().create()` as the impersonated user. Store resulting label IDs in `user_labels`
+3. **Initialize settings**: Copy org defaults into `user_settings` (styles, default language, sign-off)
+4. **Set up watch**: Call `users.watch()` for the user's mailbox → stores `watch_resource_id` and `watch_expiration`
+5. **Initial sync**: Run a full sync to classify existing inbox emails
+6. Mark `onboarded_at`
+
+---
+
+## Project Structure
+
+```
+gmail-assistant/
+├── src/
+│   ├── __init__.py
+│   ├── main.py                    # FastAPI app entry point
+│   ├── config.py                  # App configuration (env vars, defaults)
+│   │
+│   ├── gmail/
+│   │   ├── __init__.py
+│   │   ├── client.py              # GmailService + UserGmailClient
+│   │   ├── auth.py                # Service account + impersonation
+│   │   └── models.py              # Message, Thread, Draft dataclasses
+│   │
+│   ├── sync/
+│   │   ├── __init__.py
+│   │   ├── engine.py              # SyncEngine (incremental + full sync)
+│   │   ├── webhook.py             # Pub/Sub webhook handler
+│   │   └── watch.py               # Watch renewal scheduler
+│   │
+│   ├── classify/
+│   │   ├── __init__.py
+│   │   ├── engine.py              # ClassificationEngine (rules + LLM)
+│   │   ├── rules.py               # Rule-based pre-classifier
+│   │   └── prompts.py             # LLM prompt templates
+│   │
+│   ├── draft/
+│   │   ├── __init__.py
+│   │   ├── engine.py              # DraftEngine (Claude Sonnet)
+│   │   └── prompts.py             # Draft generation prompt templates
+│   │
+│   ├── lifecycle/
+│   │   ├── __init__.py
+│   │   └── manager.py             # Done/Sent/Waiting/Rework handlers
+│   │
+│   ├── users/
+│   │   ├── __init__.py
+│   │   ├── onboarding.py          # Label provisioning, settings init
+│   │   └── settings.py            # Per-user config management
+│   │
+│   ├── db/
+│   │   ├── __init__.py
+│   │   ├── connection.py          # PostgreSQL connection pool
+│   │   ├── models.py              # SQLAlchemy models (or raw queries)
+│   │   └── migrations/            # Alembic migrations
+│   │
+│   ├── api/
+│   │   ├── __init__.py
+│   │   ├── webhook.py             # POST /webhook/gmail
+│   │   ├── admin.py               # User management endpoints
+│   │   └── briefing.py            # GET /api/briefing/{user_email}
+│   │
+│   └── tasks/
+│       ├── __init__.py
+│       └── workers.py             # Task queue workers (sync, classify, draft, cleanup)
+│
+├── config/
+│   ├── communication_styles.yml   # Org-wide default styles (template)
+│   └── contacts.example.yml       # Example contacts config
+│
+├── tests/
+│   ├── test_classify.py
+│   ├── test_lifecycle.py
+│   ├── test_sync.py
+│   └── test_draft.py
+│
+├── docker-compose.yml             # App + PostgreSQL + Redis
+├── Dockerfile
+├── requirements.txt
+├── alembic.ini
+└── README.md
+```
+
+---
+
+## Processing Pipeline Comparison
+
+### v1: 12 emails, 728 seconds
+
+```
+bin/process-inbox (bash)
+  └─ claude --model sonnet -p /cleanup     ← 100s  (Claude reads prompt, calls MCP 5+ times)
+  └─ claude --model haiku -p /inbox-triage ← 590s  (Claude reads prompt, calls MCP 24+ times)
+  └─ claude --model sonnet -p /draft       ← 38s   (Claude reads prompt, calls MCP 6+ times)
+                                             ─────
+                                             728s total, ~35+ MCP round-trips
+```
+
+### v2: 12 emails, estimated 15-30 seconds
+
+```
+Pub/Sub notification arrives
+  └─ Sync engine: history.list()                  ← ~200ms  (1 API call)
+  └─ For each new message (parallel):
+      ├─ Rule-based classify                      ← ~1ms    (local, no API)
+      ├─ LLM classify (if needed, Haiku)          ← ~500ms  (1 API call)
+      ├─ Apply label                              ← ~100ms  (1 API call, or batched)
+      └─ Store in DB                              ← ~5ms    (local)
+  └─ For needs_response emails (parallel):
+      ├─ Generate draft (Sonnet)                  ← ~3-5s   (1 API call)
+      ├─ Create Gmail draft                       ← ~100ms  (1 API call)
+      └─ Move label                               ← ~100ms  (1 API call)
+                                                    ─────
+                                                    ~5-10s for classification
+                                                    ~10-20s total with drafts
+```
+
+**Speed improvement**: ~50x for classification, ~35x end-to-end.
+
+**Cost improvement**: Only 2 Claude API calls per email (classify + draft) instead of 35+ MCP round-trips through Claude's context window.
+
+---
+
+## Implementation Phases
+
+### Phase 1: Gmail API Foundation (replace MCP)
+
+- [ ] `src/gmail/auth.py` — Service account + impersonation
+- [ ] `src/gmail/client.py` — GmailService + UserGmailClient (search, get, modify, draft, batch)
+- [ ] `src/db/` — PostgreSQL schema, connection pool, migrations
+- [ ] `src/users/onboarding.py` — Auto-provision labels, store IDs
+- [ ] Tests: Gmail client against a test account
+
+**Milestone**: Can search, read, label, and draft via direct API for any user in the org.
+
+### Phase 2: Classification + Lifecycle (replace Claude commands)
+
+- [ ] `src/classify/rules.py` — Rule-based pre-classifier (port from `bin/classify-phase-b`)
+- [ ] `src/classify/engine.py` — LLM classifier via Anthropic API
+- [ ] `src/classify/prompts.py` — Extract classification prompt from `inbox-triage.md`
+- [ ] `src/lifecycle/manager.py` — Done/Sent/Waiting handlers (port from `cleanup.md`)
+- [ ] Tests: Classification accuracy against labeled test set
+
+**Milestone**: Full triage + lifecycle runs as Python code, Claude only called for ambiguous classification.
+
+### Phase 3: Draft Generation (replace draft-response command)
+
+- [ ] `src/draft/engine.py` — Draft generation via Claude Sonnet API
+- [ ] `src/draft/prompts.py` — Extract draft prompt from `draft-response.md` and `rework-draft.md`
+- [ ] `src/users/settings.py` — Per-user styles, contacts, language
+- [ ] Rework loop implementation
+- [ ] Tests: Draft quality review
+
+**Milestone**: Full pipeline runs without Claude Code or MCP.
+
+### Phase 4: Push Notifications (replace polling)
+
+- [ ] `src/sync/webhook.py` — Pub/Sub webhook endpoint
+- [ ] `src/sync/engine.py` — Incremental sync via history.list()
+- [ ] `src/sync/watch.py` — Watch renewal scheduler
+- [ ] `src/api/webhook.py` — FastAPI route for POST /webhook/gmail
+- [ ] GCP Pub/Sub topic + push subscription setup
+- [ ] Fallback scheduled sync
+
+**Milestone**: Near real-time email processing via push notifications.
+
+### Phase 5: Multi-User + Admin
+
+- [ ] `src/api/admin.py` — User management (add, remove, configure)
+- [ ] `src/api/briefing.py` — Per-user briefing/dashboard endpoint
+- [ ] Task queue (Redis) for concurrent per-user processing
+- [ ] Rate limiting (respect Gmail API quotas: 250 units/user/second)
+- [ ] Docker Compose for local dev, Dockerfile for production
+- [ ] Monitoring, logging, health checks
+
+**Milestone**: Production-ready multi-user service.
+
+---
+
+## Rate Limits & Quotas
+
+Gmail API quotas to respect:
+
+| Quota | Limit | Strategy |
+|-------|-------|----------|
+| Per-user rate limit | 250 quota units/second | Throttle per-user workers |
+| Daily usage limit | 1,000,000,000 units/day | More than enough |
+| messages.list | 5 units | Batch where possible |
+| messages.get | 5 units | Get thread (1 call) vs individual messages |
+| messages.modify | 5 units | Use batch_modify for multiple |
+| drafts.create | 10 units | One per draft |
+| history.list | 2 units | Very cheap, ideal for incremental sync |
+
+Anthropic API:
+- Haiku: Fast, cheap — use for classification
+- Sonnet: Higher quality — use for draft generation
+- Batch API available for non-urgent processing (50% cost reduction)
+
+---
+
+## Migration Path
+
+The v1 system can continue running during development. Migration per user:
+
+1. Export existing `data/inbox.db` into PostgreSQL (with user_id)
+2. Import `config/label_ids.yml` into `user_labels` table
+3. Import `config/contacts.yml` and `config/communication_styles.yml` into `user_settings`
+4. Set up watch() for the user
+5. Disable launchd scheduler
+6. Verify push-driven processing works
+
+---
+
+## Open Questions
+
+1. **Task queue choice**: Redis + Celery vs. PostgreSQL-based queue (pgqueue) vs. simple asyncio? Celery is proven but heavy; asyncio with a simple job table may suffice for <100 users.
+
+2. **Admin UI**: Build a web UI for user management, or CLI-only for v2? A simple admin API + CLI tools may be enough initially.
+
+3. **Deployment target**: GCP Cloud Run (natural fit with Pub/Sub) vs. self-hosted VPS vs. Kubernetes? Cloud Run is simplest for Pub/Sub integration.
+
+4. **Existing single-user mode**: Keep a "lite" mode that works with personal OAuth (no service account) for individual users who aren't in a Workspace org?
