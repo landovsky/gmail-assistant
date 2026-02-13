@@ -4,3 +4,24 @@ logs/
 config/communication_styles.yml
 config/contacts.yml
 config/label_ids.yml
+config/app.yml
+config/credentials.json
+config/token.json
+config/service-account-key.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+
+# Virtualenv
+.venv/
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,31 @@
+# Gmail Assistant v2 — Application Configuration
+# Copy to config/app.yml and customize.
+
+auth:
+  mode: personal_oauth            # or "service_account" for multi-user
+  credentials_file: config/credentials.json
+  token_file: config/token.json
+  # service_account_file: config/service-account-key.json  # multi-user mode
+
+database:
+  backend: sqlite                 # or "postgresql" for multi-user
+  sqlite_path: data/inbox.db
+  # postgresql_url: postgresql://user:pass@localhost:5432/gmail_assistant
+
+llm:
+  classify_model: "claude-haiku-4-5-20251001"    # fast, cheap
+  draft_model: "claude-sonnet-4-5-20250929"      # high quality
+  # Alternative models (any LiteLLM-supported model):
+  # classify_model: "gpt-4o-mini"
+  # draft_model: "gpt-4o"
+  # classify_model: "gemini/gemini-2.0-flash"
+  # draft_model: "gemini/gemini-2.0-pro"
+
+sync:
+  # pubsub_topic: "projects/my-project/topics/gmail-push"  # for push notifications
+  fallback_interval_minutes: 15
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  log_level: info

@@ -1,0 +1,64 @@
+# Gmail Assistant v2
+
+AI-powered Gmail inbox management — classifies emails, generates draft responses, manages workflows through Gmail labels.
+
+## Quick Reference
+
+@AGENTS.md
+
+### Tech Stack
+- **Python 3.11+** / **FastAPI** / **SQLite** (PostgreSQL-ready) / **LiteLLM**
+- **Gmail**: Direct `google-api-python-client` (not MCP)
+- **LLM**: LiteLLM gateway — Haiku for classification, Sonnet for drafts
+- **Config**: Pydantic Settings + YAML (`config/app.yml`)
+- **Key libs**: aiosqlite, httpx, pydantic, google-auth-oauthlib
+
+### Commands
+```bash
+pytest                         # Run all tests (49 tests)
+pytest tests/test_classify.py  # Run specific test file
+ruff check src/ tests/         # Lint
+ruff format src/ tests/        # Format
+uvicorn src.main:app --reload  # Dev server (port 8000)
+docker compose up --build      # Run via Docker
+gmail-assistant                # CLI entry point (if pip installed)
+```
+
+### Architecture
+- `src/main.py` — FastAPI app entry point, lifespan, worker pool
+- `src/api/` — REST routes (webhook, admin, briefing)
+- `src/classify/` — Two-tier classification (rules → LLM)
+- `src/draft/` — Draft generation + rework loop
+- `src/gmail/` — Direct Gmail API client, OAuth, models
+- `src/llm/` — LiteLLM gateway (model-agnostic)
+- `src/sync/` — Gmail History API sync, Pub/Sub webhook
+- `src/lifecycle/` — Email state machine (done, sent, waiting, rework)
+- `src/tasks/` — Async worker pool (claim-next job queue)
+- `src/db/` — SQLite connection, repository pattern, migrations
+- `src/users/` — Onboarding, per-user settings
+- `src/config.py` — Pydantic config (env vars override YAML)
+
+### Documentation
+Check `artifacts/registry.json` for detailed docs on:
+- Project overview and architecture
+- Testing conventions, API patterns, database conventions
+- Classification and drafting domain logic
+- Debugging workflow
+
+### Conventions
+- `from __future__ import annotations` in all files
+- Full type hints throughout
+- Async/await for all I/O (database, HTTP, Gmail)
+- Repository pattern for database access
+- Pydantic models for configuration and validation
+- Ruff for linting and formatting (line-length 100)
+- `email_events` audit table logs all state transitions
+- Commit messages: describe what was achieved/fixed (lowercase, no period)
+
+### Environment Variables (prefix: `GMA_`)
+- `ANTHROPIC_API_KEY` — LLM access
+- `GMA_AUTH_MODE` — `personal_oauth` or `service_account`
+- `GMA_DB_BACKEND` — `sqlite` (default) or `postgresql`
+- `GMA_LLM_CLASSIFY_MODEL` / `GMA_LLM_DRAFT_MODEL` — model overrides
+- `GMA_SERVER_LOG_LEVEL` — logging level (default: info)
+- `GMA_SYNC_PUBSUB_TOPIC` — Gmail Pub/Sub topic
