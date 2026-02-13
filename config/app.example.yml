@@ -15,6 +15,7 @@ database:
 llm:
   classify_model: "claude-haiku-4-5-20251001"    # fast, cheap
   draft_model: "claude-sonnet-4-5-20250929"      # high quality
+  # context_model: "claude-haiku-4-5-20251001"   # context gathering (same as classify)
   # Alternative models (any LiteLLM-supported model):
   # classify_model: "gpt-4o-mini"
   # draft_model: "gpt-4o"

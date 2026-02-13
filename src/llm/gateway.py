@@ -34,7 +34,9 @@ class ClassifyResult:
             data = json.loads(content)
             category = data.get("category", "needs_response")
             if category not in cls.VALID_CATEGORIES:
-                logger.warning("LLM returned unknown category %r, defaulting to needs_response", category)
+                logger.warning(
+                    "LLM returned unknown category %r, defaulting to needs_response", category
+                )
                 category = "needs_response"
             return cls(
                 category=category,
@@ -101,12 +103,30 @@ class LLMGateway:
             logger.error("LLM draft call failed: %s", e)
             return f"[ERROR: Draft generation failed — {e}]"
 
+    def generate_context_queries(self, system: str, user_message: str) -> str:
+        """Call context model to generate Gmail search queries. Returns raw JSON string."""
+        try:
+            response = litellm.completion(
+                model=self.config.context_model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_message},
+                ],
+                max_tokens=self.config.max_context_tokens,
+                temperature=0.0,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error("LLM context query generation failed: %s", e)
+            return "[]"
+
     def health_check(self) -> dict[str, bool]:
         """Check if LLM models are reachable."""
         results = {}
         for name, model in [
             ("classify", self.config.classify_model),
             ("draft", self.config.draft_model),
+            ("context", self.config.context_model),
         ]:
             try:
                 litellm.completion(

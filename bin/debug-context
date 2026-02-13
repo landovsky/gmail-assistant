@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+"""Debug context gathering — generate search queries and find related threads.
+
+Usage:
+    # Manual input (LLM query generation only, no Gmail access):
+    bin/debug-context --sender "petr@example.com" --subject "Project update" \
+        --body "Here is the latest status on the Alpha project..."
+
+    # Manual input with live Gmail search:
+    bin/debug-context --live --sender "petr@example.com" --subject "Project update" \
+        --body "Here is the latest..."
+
+    # Load from database + run live Gmail search:
+    bin/debug-context --thread-id 18e1234abcd
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import sys
+from pathlib import Path
+
+# Add project root to path
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+
+# ── ANSI colors ──────────────────────────────────────────────────────────────
+
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+
+def _header(title: str) -> None:
+    print(f"\n{BOLD}{CYAN}{'─' * 60}{RESET}")
+    print(f"{BOLD}{CYAN}  {title}{RESET}")
+    print(f"{BOLD}{CYAN}{'─' * 60}{RESET}")
+
+
+def _ok(msg: str) -> None:
+    print(f"  {GREEN}✓{RESET} {msg}")
+
+
+def _fail(msg: str) -> None:
+    print(f"  {RED}✗{RESET} {msg}")
+
+
+def _info(msg: str) -> None:
+    print(f"  {DIM}→{RESET} {msg}")
+
+
+def _result(label: str, value: str, color: str = "") -> None:
+    print(f"  {BOLD}{label}:{RESET} {color}{value}{RESET}")
+
+
+# ── Core logic ────────────────────────────────────────────────────────────────
+
+
+def generate_queries(sender: str, subject: str, body: str) -> list[str]:
+    """Use LLM to generate Gmail search queries."""
+    from src.context.prompts import CONTEXT_SYSTEM_PROMPT, build_context_user_message
+    from src.llm.config import LLMConfig
+    from src.llm.gateway import LLMGateway
+
+    config = LLMConfig()
+    gateway = LLMGateway(config)
+
+    user_message = build_context_user_message(sender, subject, body)
+
+    _info(f"Calling {config.context_model}...")
+    raw = gateway.generate_context_queries(CONTEXT_SYSTEM_PROMPT, user_message)
+
+    _header("Raw LLM Response")
+    print(f"  {DIM}{raw}{RESET}")
+
+    try:
+        queries = json.loads(raw)
+        if not isinstance(queries, list):
+            _fail("Response is not a JSON array")
+            return []
+        return [str(q) for q in queries[:3]]
+    except json.JSONDecodeError:
+        _fail(f"Failed to parse as JSON: {raw[:200]}")
+        return []
+
+
+def run_live_search(
+    queries: list[str], exclude_thread_id: str | None = None
+) -> list[dict[str, str]]:
+    """Run queries against live Gmail and deduplicate."""
+    from src.config import AppConfig
+    from src.gmail.client import GmailService
+
+    config = AppConfig.from_yaml()
+    gmail_service = GmailService(config)
+    gmail_client = gmail_service.for_user()
+
+    seen_threads: set[str] = set()
+    results: list[dict[str, str]] = []
+
+    for query in queries:
+        _header(f"Search: {query}")
+        try:
+            messages = gmail_client.search_metadata(query, max_results=10)
+            _info(f"Found {len(messages)} messages")
+
+            for msg in messages:
+                if exclude_thread_id and msg.thread_id == exclude_thread_id:
+                    _info(f"  (skipped current thread {msg.thread_id})")
+                    continue
+                if msg.thread_id in seen_threads:
+                    _info(f"  (duplicate thread {msg.thread_id})")
+                    continue
+
+                seen_threads.add(msg.thread_id)
+                sender = (
+                    f"{msg.sender_name} <{msg.sender_email}>"
+                    if msg.sender_name
+                    else msg.sender_email
+                )
+                _result("Thread", msg.thread_id)
+                _result("From", sender)
+                _result("Subject", msg.subject)
+                _result("Snippet", msg.snippet[:150] if msg.snippet else "(empty)")
+                print()
+
+                results.append(
+                    {
+                        "thread_id": msg.thread_id,
+                        "sender": sender,
+                        "subject": msg.subject,
+                        "snippet": msg.snippet,
+                    }
+                )
+
+                if len(results) >= 5:
+                    break
+        except Exception as e:
+            _fail(f"Search failed: {e}")
+
+        if len(results) >= 5:
+            break
+
+    return results
+
+
+def load_from_db(thread_id: str) -> dict | None:
+    """Load email data from the local database."""
+    db_path = REPO_ROOT / "data" / "inbox.db"
+    if not db_path.exists():
+        _fail(f"Database not found: {db_path}")
+        return None
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT sender_email, sender_name, subject, snippet "
+        "FROM emails WHERE gmail_thread_id = ? LIMIT 1",
+        (thread_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        _fail(f"Thread {thread_id} not found in database")
+        return None
+
+    return dict(row)
+
+
+def show_formatted_context(results: list[dict[str, str]]) -> None:
+    """Show the final formatted context block as it would appear in the draft prompt."""
+    from src.context.gatherer import GatheredContext
+
+    ctx = GatheredContext(related_threads=results)
+    _header("Formatted Context Block (as seen in draft prompt)")
+    if ctx.is_empty:
+        _info("(empty — no related threads found)")
+    else:
+        print(f"{DIM}{ctx.format_for_prompt()}{RESET}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Debug context gathering — generate search queries and find related threads",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("--sender", default="", help="Sender email address")
+    parser.add_argument("--subject", default="", help="Email subject")
+    parser.add_argument("--body", default="", help="Email body text")
+    parser.add_argument("--thread-id", help="Load from DB + run live Gmail search")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Also run Gmail search (requires OAuth credentials)",
+    )
+    args = parser.parse_args()
+
+    exclude_thread_id: str | None = None
+
+    # Load from database
+    if args.thread_id:
+        row = load_from_db(args.thread_id)
+        if not row:
+            return 1
+        args.sender = row["sender_email"]
+        args.subject = row.get("subject", "")
+        args.body = row.get("snippet", "")
+        args.live = True
+        exclude_thread_id = args.thread_id
+
+    if not args.sender and not args.subject and not args.body:
+        print(f"{BOLD}Interactive context debug{RESET}")
+        print(f"{DIM}Enter email details (press Enter to skip):{RESET}")
+        args.sender = input("  Sender email: ").strip()
+        args.subject = input("  Subject: ").strip()
+        print("  Body (end with empty line):")
+        body_lines = []
+        while True:
+            line = input("  ")
+            if not line:
+                break
+            body_lines.append(line)
+        args.body = "\n".join(body_lines)
+
+    # Step 1: Show input
+    _header("Email Input")
+    _result("Sender", args.sender or "(empty)")
+    _result("Subject", args.subject or "(empty)")
+    _result(
+        "Body",
+        f"{args.body[:200]}{'…' if len(args.body) > 200 else ''}" if args.body else "(empty)",
+    )
+
+    # Step 2: Generate queries
+    _header("Query Generation (LLM)")
+    try:
+        queries = generate_queries(args.sender, args.subject, args.body)
+    except Exception as e:
+        _fail(f"Query generation failed: {e}")
+        _info("Make sure ANTHROPIC_API_KEY is set and litellm is installed")
+        return 1
+
+    if not queries:
+        _fail("No queries generated")
+        return 1
+
+    _header("Generated Queries")
+    for i, q in enumerate(queries, 1):
+        print(f"  {YELLOW}{i}. {q}{RESET}")
+
+    # Step 3: Optionally run live search
+    if args.live:
+        _header("Live Gmail Search")
+        try:
+            results = run_live_search(queries, exclude_thread_id)
+        except Exception as e:
+            _fail(f"Live search failed: {e}")
+            return 1
+
+        # Step 4: Dedup summary
+        _header("Deduplication Summary")
+        _result("Unique threads", str(len(results)))
+
+        # Step 5: Formatted context
+        show_formatted_context(results)
+    else:
+        _info("Use --live to also run Gmail search")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -41,9 +41,7 @@ class UserGmailClient:
     def search(self, query: str, max_results: int = 50) -> list[Message]:
         """Search for messages matching a Gmail query."""
         results = (
-            self._gmail.messages()
-            .list(userId="me", q=query, maxResults=max_results)
-            .execute()
+            self._gmail.messages().list(userId="me", q=query, maxResults=max_results).execute()
         )
         messages = []
         for item in results.get("messages", []):
@@ -52,14 +50,26 @@ class UserGmailClient:
                 messages.append(msg)
         return messages
 
+    def search_metadata(self, query: str, max_results: int = 10) -> list[Message]:
+        """Search messages, fetching only metadata (no body). Much cheaper than search()."""
+        try:
+            results = (
+                self._gmail.messages().list(userId="me", q=query, maxResults=max_results).execute()
+            )
+            messages = []
+            for item in results.get("messages", []):
+                msg = self.get_message(item["id"], format="metadata")
+                if msg:
+                    messages.append(msg)
+            return messages
+        except Exception as e:
+            logger.error("Metadata search failed for query %r: %s", query, e)
+            return []
+
     def get_message(self, message_id: str, format: str = "full") -> Message | None:
         """Get a single message by ID."""
         try:
-            data = (
-                self._gmail.messages()
-                .get(userId="me", id=message_id, format=format)
-                .execute()
-            )
+            data = self._gmail.messages().get(userId="me", id=message_id, format=format).execute()
             return Message.from_api(data)
         except Exception as e:
             logger.error("Failed to get message %s: %s", message_id, e)
@@ -68,11 +78,7 @@ class UserGmailClient:
     def get_thread(self, thread_id: str) -> Thread | None:
         """Get a full thread with all messages."""
         try:
-            data = (
-                self._gmail.threads()
-                .get(userId="me", id=thread_id, format="full")
-                .execute()
-            )
+            data = self._gmail.threads().get(userId="me", id=thread_id, format="full").execute()
             return Thread.from_api(data)
         except Exception as e:
             logger.error("Failed to get thread %s: %s", thread_id, e)
@@ -91,9 +97,7 @@ class UserGmailClient:
                 body["addLabelIds"] = add
             if remove:
                 body["removeLabelIds"] = remove
-            self._gmail.messages().modify(
-                userId="me", id=message_id, body=body
-            ).execute()
+            self._gmail.messages().modify(userId="me", id=message_id, body=body).execute()
             return True
         except Exception as e:
             logger.error("Failed to modify labels on %s: %s", message_id, e)
@@ -213,9 +217,7 @@ class UserGmailClient:
             logger.error("Failed to list history: %s", e)
             return []
 
-    def watch(
-        self, topic_name: str, label_ids: list[str] | None = None
-    ) -> WatchResponse | None:
+    def watch(self, topic_name: str, label_ids: list[str] | None = None) -> WatchResponse | None:
         """Set up Gmail push notifications via Pub/Sub."""
         try:
             body: dict[str, Any] = {"topicName": topic_name}

@@ -30,7 +30,7 @@ Rules:
 
 Sign-off: {sign_off}
 
-{f'Examples:{examples_text}' if examples_text else ''}
+{f"Examples:{examples_text}" if examples_text else ""}
 
 Guidelines:
 - Match the language of the incoming email unless the style specifies otherwise.
@@ -48,6 +48,7 @@ def build_draft_user_message(
     subject: str,
     thread_body: str,
     user_instructions: str | None = None,
+    related_context: str | None = None,
 ) -> str:
     """Build the user message for draft generation."""
     parts = [
@@ -58,16 +59,21 @@ def build_draft_user_message(
         thread_body[:3000],
     ]
 
+    if related_context:
+        parts.extend(["", related_context])
+
     if user_instructions:
-        parts.extend([
-            "",
-            "--- User instructions ---",
-            user_instructions,
-            "--- End instructions ---",
-            "",
-            "Incorporate these instructions into the draft. They guide WHAT to say, "
-            "not HOW to say it. The draft should still follow the style rules.",
-        ])
+        parts.extend(
+            [
+                "",
+                "--- User instructions ---",
+                user_instructions,
+                "--- End instructions ---",
+                "",
+                "Incorporate these instructions into the draft. They guide WHAT to say, "
+                "not HOW to say it. The draft should still follow the style rules.",
+            ]
+        )
 
     return "\n".join(parts)
 

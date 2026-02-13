@@ -33,6 +33,7 @@ class DraftEngine:
         resolved_style: str,
         user_instructions: str | None = None,
         style_config: dict | None = None,
+        related_context: str | None = None,
     ) -> str:
         """Generate a draft reply. Returns the full draft body with rework marker."""
         if style_config is None:
@@ -40,7 +41,12 @@ class DraftEngine:
 
         system_prompt = build_draft_system_prompt(style_config, resolved_style)
         user_message = build_draft_user_message(
-            sender_email, sender_name, subject, thread_body, user_instructions
+            sender_email,
+            sender_name,
+            subject,
+            thread_body,
+            user_instructions,
+            related_context,
         )
 
         raw_draft = self.llm.draft(system_prompt, user_message)
@@ -71,8 +77,13 @@ class DraftEngine:
 
         system_prompt = build_draft_system_prompt(style_config, resolved_style)
         user_message = build_rework_user_message(
-            sender_email, sender_name, subject, thread_body,
-            old_draft, instruction, rework_count,
+            sender_email,
+            sender_name,
+            subject,
+            thread_body,
+            old_draft,
+            instruction,
+            rework_count,
         )
 
         raw_draft = self.llm.draft(system_prompt, user_message)
@@ -81,8 +92,7 @@ class DraftEngine:
         if rework_count + 1 >= 3:
             raw_draft = (
                 "⚠️ This is the last automatic rework. "
-                "Further changes must be made manually.\n\n"
-                + raw_draft
+                "Further changes must be made manually.\n\n" + raw_draft
             )
 
         return wrap_draft_with_marker(raw_draft), instruction
