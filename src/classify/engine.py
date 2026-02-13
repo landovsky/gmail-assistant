@@ -57,16 +57,20 @@ class ClassificationEngine:
             headers=headers,
         )
 
-        if rule_result.matched and rule_result.confidence == "high":
-            style = resolve_communication_style(sender_email, contacts_config)
-            return Classification(
-                category=rule_result.category,
-                confidence=rule_result.confidence,
-                reasoning=rule_result.reasoning,
-                detected_language="cs",
-                resolved_style=style,
-                source="rules",
-            )
+        # NOTE: Rule-based shortcut disabled — LLM handles all classification.
+        # Rules still run for is_automated detection (safety net below).
+        # To re-enable, uncomment the block below:
+        #
+        # if rule_result.matched and rule_result.confidence == "high":
+        #     style = resolve_communication_style(sender_email, contacts_config)
+        #     return Classification(
+        #         category=rule_result.category,
+        #         confidence=rule_result.confidence,
+        #         reasoning=rule_result.reasoning,
+        #         detected_language="cs",
+        #         resolved_style=style,
+        #         source="rules",
+        #     )
 
         # Tier 2: LLM-based (via gateway)
         llm_result = self.llm.classify(

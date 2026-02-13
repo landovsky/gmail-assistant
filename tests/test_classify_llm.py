@@ -104,9 +104,9 @@ class TestClassificationEngine:
         )
         return ClassificationEngine(mock_gateway)
 
-    def test_rule_match_skips_llm(self):
-        """When rules match with high confidence, LLM is not called."""
-        engine = self._make_engine()
+    def test_rule_match_still_calls_llm(self):
+        """Rule-based shortcut is disabled — LLM handles all classification."""
+        engine = self._make_engine(llm_category="payment_request")
         result = engine.classify(
             sender_email="person@example.com",
             sender_name="Person",
@@ -118,8 +118,8 @@ class TestClassificationEngine:
             contacts_config={},
         )
         assert result.category == "payment_request"
-        assert result.source == "rules"
-        engine.llm.classify.assert_not_called()
+        assert result.source == "llm"
+        engine.llm.classify.assert_called_once()
 
     def test_no_rule_match_calls_llm(self):
         """When rules don't match, LLM is consulted."""
@@ -156,8 +156,9 @@ class TestClassificationEngine:
         assert result.category == "action_required"
         assert result.source == "llm"
 
-    def test_blacklist_skips_llm(self):
-        engine = self._make_engine()
+    def test_blacklist_overrides_llm_to_fyi(self):
+        """Blacklisted sender: LLM still runs but automated safety net forces fyi."""
+        engine = self._make_engine(llm_category="needs_response")
         result = engine.classify(
             sender_email="bot@noreply.github.com",
             sender_name="GitHub Bot",
@@ -169,12 +170,11 @@ class TestClassificationEngine:
             contacts_config={},
         )
         assert result.category == "fyi"
-        assert result.source == "rules"
-        engine.llm.classify.assert_not_called()
+        assert result.source == "llm"
 
-    def test_czech_meeting_request_matched_by_rules(self):
-        """The originally misclassified email now matched by rules."""
-        engine = self._make_engine()
+    def test_czech_meeting_request_classified_by_llm(self):
+        """Meeting request — LLM handles all classification now."""
+        engine = self._make_engine(llm_category="action_required")
         result = engine.classify(
             sender_email="petr.ivan@example.com",
             sender_name="Petr Ivan",
@@ -187,8 +187,8 @@ class TestClassificationEngine:
             contacts_config={},
         )
         assert result.category == "action_required"
-        assert result.source == "rules"
-        engine.llm.classify.assert_not_called()
+        assert result.source == "llm"
+        engine.llm.classify.assert_called_once()
 
     def test_style_resolution_for_needs_response(self):
         engine = self._make_engine(llm_category="needs_response")
@@ -246,7 +246,7 @@ class TestAutomatedHeaderOverride:
         return ClassificationEngine(mock_gateway)
 
     def test_automated_header_overrides_llm_needs_response(self):
-        """If LLM says needs_response but email has List-Unsubscribe → fyi."""
+        """If LLM says needs_response but email has List-Unsubscribe → safety net overrides to fyi."""
         engine = self._make_engine(llm_category="needs_response")
         result = engine.classify(
             sender_email="team@saas.com",
@@ -259,16 +259,13 @@ class TestAutomatedHeaderOverride:
             contacts_config={},
             headers={"List-Unsubscribe": "<mailto:unsub@saas.com>"},
         )
-        # Rules detected automation via header; no content pattern matched,
-        # so rules returned fyi/high/matched=True — LLM never called.
+        # LLM runs but safety net detects automation header → overrides to fyi
         assert result.category == "fyi"
-        assert result.source == "rules"
+        assert result.source == "llm"
 
     def test_automated_header_allows_llm_action_required(self):
-        """Automated email where LLM returns action_required — keep it."""
+        """Automated email where LLM returns action_required — safety net overrides to fyi."""
         engine = self._make_engine(llm_category="action_required")
-        # This email has no content pattern match, but has automation header.
-        # Rules will catch it and return fyi before LLM is called.
         result = engine.classify(
             sender_email="ci@builds.com",
             sender_name="CI Bot",
@@ -280,8 +277,9 @@ class TestAutomatedHeaderOverride:
             contacts_config={},
             headers={"Auto-Submitted": "auto-generated"},
         )
-        assert result.category == "fyi"
-        assert result.source == "rules"
+        # LLM says action_required but safety net only overrides needs_response
+        assert result.category == "action_required"
+        assert result.source == "llm"
 
     def test_no_headers_llm_needs_response_preserved(self):
         """Without automation headers, LLM needs_response is kept."""

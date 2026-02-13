@@ -59,8 +59,8 @@ cases:
     body: "Please sign the attached NDA and return it by Friday."
 
   - id: ar-03
-    description: "German appointment request (rule: Termin)"
-    expected_category: action_required
+    description: "German appointment request (borderline — LLM sees as needs_response)"
+    expected_category: needs_response
     sender_email: "hans.mueller@kunde.de"
     sender_name: "Hans Müller"
     subject: "Termin nächste Woche"
@@ -106,6 +106,48 @@ cases:
     sender_email: "noreply@github.com"
     subject: "New comment on issue #42"
     body: "User xyz commented on your pull request."
+
+  # ── fyi: promo/marketing false positives (should NOT be payment_request) ────
+
+  - id: fyi-04
+    description: "Lidl promo with CZK prices (rule: marketing sender)"
+    expected_category: fyi
+    sender_email: "news@mail.lidlplus.cz"
+    sender_name: "Lidl"
+    subject: "⭐Buď o krok napřed! Podívej se na pondělní nabídku v předstihu!⭐"
+    body: "Řepkový olej 34.90 Kč, Pšeničná mouka 9.90 Kč. Odhlásit newsletter"
+
+  - id: fyi-05
+    description: "Temu promo mentioning payment credits (rule: unsubscribe)"
+    expected_category: fyi
+    sender_email: "temu@eu.temuemail.com"
+    sender_name: "Temu"
+    subject: "Confirm Your Offer"
+    body: "Your payment has been returned as credits. T&Cs apply. Unsubscribe"
+
+  - id: fyi-06
+    description: "Electrolux discount promo with CZK prices (rule: marketing sender)"
+    expected_category: fyi
+    sender_email: "electrolux@marketing.electrolux.com"
+    sender_name: "Electrolux"
+    subject: "Electroluxusní slevy až 40 %"
+    body: "Ušetřete až 40 % právě teď! Odvlhčovač 4 199 Kč 5 999 Kč Sleva 30 %"
+
+  - id: fyi-07
+    description: "Portu investment newsletter with USD amounts (rule: newsletter content)"
+    expected_category: fyi
+    sender_email: "info@edu.portu.cz"
+    sender_name: "Portu.cz"
+    subject: "Portu Newsletter 427: Boží investice přichází"
+    body: "Rekordní obraty na Wall Street. Denní obrat 1,03 bilionu USD. Odhlásit se můžete zde."
+
+  - id: fyi-08
+    description: "Svět plodů discount with CZK coupon (rule: newsletter sender)"
+    expected_category: fyi
+    sender_email: "newsletter@ahoj.svetplodu.cz"
+    sender_name: "Svět plodů"
+    subject: "100 Kč sleva ve Světě plodů čeká na Vás. 🌰"
+    body: "Ve Světě plodů na Vás čeká 100 Kč na další nákup. Kód: A284EG1. Odhlásit odběr newsletteru"
 
   - id: fyi-03
     description: "Shipping notification from real sender, no FYI patterns (LLM-only)"
