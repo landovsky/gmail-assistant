@@ -12,6 +12,7 @@ from googleapiclient.discovery import build
 from src.config import AppConfig
 from src.gmail.auth import GmailAuth
 from src.gmail.models import Draft, HistoryRecord, Message, Thread, WatchResponse
+from src.gmail.retry import execute_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +39,15 @@ class UserGmailClient:
         self.user_email = user_email
         self._gmail = service.users()
 
+    def _exec(self, request: Any, operation: str = "API call") -> Any:
+        """Execute a Google API request with retry on transient network errors."""
+        return execute_with_retry(request, operation=operation)
+
     def search(self, query: str, max_results: int = 50) -> list[Message]:
         """Search for messages matching a Gmail query."""
-        results = (
-            self._gmail.messages().list(userId="me", q=query, maxResults=max_results).execute()
+        results = self._exec(
+            self._gmail.messages().list(userId="me", q=query, maxResults=max_results),
+            operation="messages.list",
         )
         messages = []
         for item in results.get("messages", []):
@@ -53,8 +59,9 @@ class UserGmailClient:
     def search_metadata(self, query: str, max_results: int = 10) -> list[Message]:
         """Search messages, fetching only metadata (no body). Much cheaper than search()."""
         try:
-            results = (
-                self._gmail.messages().list(userId="me", q=query, maxResults=max_results).execute()
+            results = self._exec(
+                self._gmail.messages().list(userId="me", q=query, maxResults=max_results),
+                operation="messages.list (metadata)",
             )
             messages = []
             for item in results.get("messages", []):
@@ -69,7 +76,10 @@ class UserGmailClient:
     def get_message(self, message_id: str, format: str = "full") -> Message | None:
         """Get a single message by ID."""
         try:
-            data = self._gmail.messages().get(userId="me", id=message_id, format=format).execute()
+            data = self._exec(
+                self._gmail.messages().get(userId="me", id=message_id, format=format),
+                operation=f"messages.get({message_id})",
+            )
             return Message.from_api(data)
         except Exception as e:
             logger.error("Failed to get message %s: %s", message_id, e)
@@ -78,7 +88,10 @@ class UserGmailClient:
     def get_thread(self, thread_id: str) -> Thread | None:
         """Get a full thread with all messages."""
         try:
-            data = self._gmail.threads().get(userId="me", id=thread_id, format="full").execute()
+            data = self._exec(
+                self._gmail.threads().get(userId="me", id=thread_id, format="full"),
+                operation=f"threads.get({thread_id})",
+            )
             return Thread.from_api(data)
         except Exception as e:
             logger.error("Failed to get thread %s: %s", thread_id, e)
@@ -97,7 +110,10 @@ class UserGmailClient:
                 body["addLabelIds"] = add
             if remove:
                 body["removeLabelIds"] = remove
-            self._gmail.messages().modify(userId="me", id=message_id, body=body).execute()
+            self._exec(
+                self._gmail.messages().modify(userId="me", id=message_id, body=body),
+                operation=f"messages.modify({message_id})",
+            )
             return True
         except Exception as e:
             logger.error("Failed to modify labels on %s: %s", message_id, e)
@@ -118,7 +134,10 @@ class UserGmailClient:
                 body["addLabelIds"] = add
             if remove:
                 body["removeLabelIds"] = remove
-            self._gmail.messages().batchModify(userId="me", body=body).execute()
+            self._exec(
+                self._gmail.messages().batchModify(userId="me", body=body),
+                operation="messages.batchModify",
+            )
             return True
         except Exception as e:
             logger.error("Failed to batch modify labels: %s", e)
@@ -148,7 +167,10 @@ class UserGmailClient:
                     "threadId": thread_id,
                 }
             }
-            result = self._gmail.drafts().create(userId="me", body=draft_body).execute()
+            result = self._exec(
+                self._gmail.drafts().create(userId="me", body=draft_body),
+                operation="drafts.create",
+            )
             return result.get("id")
         except Exception as e:
             logger.error("Failed to create draft: %s", e)
@@ -157,7 +179,10 @@ class UserGmailClient:
     def get_draft(self, draft_id: str) -> Draft | None:
         """Get a draft by ID."""
         try:
-            data = self._gmail.drafts().get(userId="me", id=draft_id).execute()
+            data = self._exec(
+                self._gmail.drafts().get(userId="me", id=draft_id),
+                operation=f"drafts.get({draft_id})",
+            )
             return Draft.from_api(data)
         except Exception:
             return None
@@ -165,7 +190,10 @@ class UserGmailClient:
     def trash_draft(self, draft_id: str) -> bool:
         """Move a draft to trash."""
         try:
-            self._gmail.drafts().delete(userId="me", id=draft_id).execute()
+            self._exec(
+                self._gmail.drafts().delete(userId="me", id=draft_id),
+                operation=f"drafts.delete({draft_id})",
+            )
             return True
         except Exception as e:
             logger.error("Failed to trash draft %s: %s", draft_id, e)
@@ -174,7 +202,10 @@ class UserGmailClient:
     def list_drafts(self) -> list[Draft]:
         """List all drafts."""
         try:
-            result = self._gmail.drafts().list(userId="me").execute()
+            result = self._exec(
+                self._gmail.drafts().list(userId="me"),
+                operation="drafts.list",
+            )
             return [Draft.from_api(d) for d in result.get("drafts", [])]
         except Exception as e:
             logger.error("Failed to list drafts: %s", e)
@@ -209,14 +240,20 @@ class UserGmailClient:
                 params["labelId"] = label_id
 
             records = []
-            response = self._gmail.history().list(**params).execute()
+            response = self._exec(
+                self._gmail.history().list(**params),
+                operation="history.list",
+            )
             for item in response.get("history", []):
                 records.append(HistoryRecord.from_api(item))
 
             # Handle pagination
             while "nextPageToken" in response:
                 params["pageToken"] = response["nextPageToken"]
-                response = self._gmail.history().list(**params).execute()
+                response = self._exec(
+                    self._gmail.history().list(**params),
+                    operation="history.list (page)",
+                )
                 for item in response.get("history", []):
                     records.append(HistoryRecord.from_api(item))
 
@@ -236,7 +273,10 @@ class UserGmailClient:
             if label_ids:
                 body["labelIds"] = label_ids
                 body["labelFilterBehavior"] = "INCLUDE"
-            result = self._gmail.watch(userId="me", body=body).execute()
+            result = self._exec(
+                self._gmail.watch(userId="me", body=body),
+                operation="watch",
+            )
             return WatchResponse.from_api(result)
         except Exception as e:
             logger.error("Failed to set up watch: %s", e)
@@ -245,7 +285,10 @@ class UserGmailClient:
     def stop_watch(self) -> bool:
         """Stop Gmail push notifications."""
         try:
-            self._gmail.stop(userId="me").execute()
+            self._exec(
+                self._gmail.stop(userId="me"),
+                operation="stop",
+            )
             return True
         except Exception as e:
             logger.error("Failed to stop watch: %s", e)
@@ -255,7 +298,10 @@ class UserGmailClient:
         """Get existing label by name or create it. Returns label ID."""
         try:
             # List existing labels
-            results = self._gmail.labels().list(userId="me").execute()
+            results = self._exec(
+                self._gmail.labels().list(userId="me"),
+                operation="labels.list",
+            )
             for label in results.get("labels", []):
                 if label["name"] == name:
                     return label["id"]
@@ -266,7 +312,10 @@ class UserGmailClient:
                 "labelListVisibility": kwargs.get("visibility", "labelShow"),
                 "messageListVisibility": kwargs.get("message_visibility", "show"),
             }
-            result = self._gmail.labels().create(userId="me", body=body).execute()
+            result = self._exec(
+                self._gmail.labels().create(userId="me", body=body),
+                operation=f"labels.create({name})",
+            )
             logger.info("Created label: %s → %s", name, result["id"])
             return result["id"]
         except Exception as e:
@@ -276,7 +325,10 @@ class UserGmailClient:
     def get_profile(self) -> dict[str, Any]:
         """Get the user's Gmail profile (email address, historyId)."""
         try:
-            return self._gmail.getProfile(userId="me").execute()
+            return self._exec(
+                self._gmail.getProfile(userId="me"),
+                operation="getProfile",
+            )
         except Exception as e:
             logger.error("Failed to get profile: %s", e)
             return {}
