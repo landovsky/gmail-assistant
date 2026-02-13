@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import sentry_sdk
 from fastapi import FastAPI
 
+from src.admin.setup import setup_admin
 from src.api.admin import router as admin_router
 from src.api.briefing import router as briefing_router
 from src.api.webhook import router as webhook_router
@@ -16,6 +17,7 @@ from src.classify.engine import ClassificationEngine
 from src.config import AppConfig
 from src.context.gatherer import ContextGatherer
 from src.db.connection import init_db
+from src.db.models import LLMCallRepository
 from src.draft.engine import DraftEngine
 from src.gmail.client import GmailService
 from src.llm.config import LLMConfig
@@ -41,7 +43,8 @@ async def lifespan(app: FastAPI):
 
     gmail_service = GmailService(config)
     llm_config = LLMConfig.from_app_config(config)
-    llm_gateway = LLMGateway(llm_config)
+    call_repo = LLMCallRepository(db)
+    llm_gateway = LLMGateway(llm_config, call_repo=call_repo)
     classification_engine = ClassificationEngine(llm_gateway)
     draft_engine = DraftEngine(llm_gateway)
     context_gatherer = ContextGatherer(llm_gateway)
@@ -124,6 +127,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(webhook_router)
     app.include_router(admin_router)
     app.include_router(briefing_router)
+
+    # Mount admin UI
+    setup_admin(app, str(config.database.sqlite_path))
 
     return app
 

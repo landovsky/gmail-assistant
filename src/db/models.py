@@ -314,6 +314,76 @@ class EventRepository:
         )
 
 
+class LLMCallRepository:
+    """Database operations for LLM call logging."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def log(
+        self,
+        call_type: str,
+        model: str,
+        user_id: int | None = None,
+        gmail_thread_id: str | None = None,
+        system_prompt: str | None = None,
+        user_message: str | None = None,
+        response_text: str | None = None,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+        latency_ms: int = 0,
+        error: str | None = None,
+    ) -> int:
+        """Log an LLM API call with all metadata."""
+        return self.db.execute_write(
+            """INSERT INTO llm_calls (
+                user_id, gmail_thread_id, call_type, model,
+                system_prompt, user_message, response_text,
+                prompt_tokens, completion_tokens, total_tokens,
+                latency_ms, error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                user_id, gmail_thread_id, call_type, model,
+                system_prompt, user_message, response_text,
+                prompt_tokens, completion_tokens, total_tokens,
+                latency_ms, error,
+            ),
+        )
+
+    def get_by_thread(self, thread_id: str) -> list[dict[str, Any]]:
+        """Get all LLM calls for a specific Gmail thread."""
+        return self.db.execute(
+            """SELECT * FROM llm_calls
+               WHERE gmail_thread_id = ?
+               ORDER BY created_at""",
+            (thread_id,),
+        )
+
+    def get_recent(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Get recent LLM calls (for debugging/monitoring)."""
+        return self.db.execute(
+            "SELECT * FROM llm_calls ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+
+    def get_stats(self, user_id: int | None = None) -> dict[str, Any]:
+        """Get token usage statistics."""
+        where = "WHERE user_id = ?" if user_id else ""
+        params = (user_id,) if user_id else ()
+        result = self.db.execute_one(
+            f"""SELECT
+                COUNT(*) as call_count,
+                SUM(prompt_tokens) as total_prompt_tokens,
+                SUM(completion_tokens) as total_completion_tokens,
+                SUM(total_tokens) as total_tokens,
+                AVG(latency_ms) as avg_latency_ms
+               FROM llm_calls {where}""",
+            params,
+        )
+        return result or {}
+
+
 class JobRepository:
     """Database operations for the job queue."""
 

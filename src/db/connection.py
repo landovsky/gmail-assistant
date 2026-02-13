@@ -82,13 +82,20 @@ class Database:
 
     def initialize_schema(self) -> None:
         """Create the v2 schema if tables don't exist."""
-        migration_path = Path(__file__).parent / "migrations" / "001_v2_schema.sql"
-        if migration_path.exists():
-            sql = migration_path.read_text()
-            self.run_migration(sql)
-            logger.info("V2 schema initialized")
-        else:
-            logger.warning("Migration file not found: %s", migration_path)
+        migrations_dir = Path(__file__).parent / "migrations"
+        migrations = [
+            "001_v2_schema.sql",
+            "002_llm_calls.sql",
+        ]
+
+        for migration_file in migrations:
+            migration_path = migrations_dir / migration_file
+            if migration_path.exists():
+                sql = migration_path.read_text()
+                self.run_migration(sql)
+                logger.info("Applied migration: %s", migration_file)
+            else:
+                logger.warning("Migration file not found: %s", migration_path)
 
 
 # Module-level singleton

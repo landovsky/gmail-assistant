@@ -198,6 +198,8 @@ class LifecycleManager:
             rework_count=rework_count,
             resolved_style=email.get("resolved_style", "business"),
             style_config=style_config,
+            user_id=user_id,
+            gmail_thread_id=thread_id,
         )
 
         # Trash old draft

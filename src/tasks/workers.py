@@ -165,6 +165,8 @@ class WorkerPool:
             blacklist=settings.blacklist,
             contacts_config=contacts,
             headers=msg.headers,
+            user_id=job.user_id,
+            gmail_thread_id=msg.thread_id,
         )
 
         # Apply Gmail label
@@ -247,6 +249,8 @@ class WorkerPool:
                 email["sender_email"],
                 email.get("subject", ""),
                 thread_body,
+                user_id=job.user_id,
+                gmail_thread_id=thread_id,
             )
             if not ctx.is_empty:
                 related_context = ctx.format_for_prompt()
@@ -261,6 +265,8 @@ class WorkerPool:
             resolved_style=email.get("resolved_style", "business"),
             style_config=settings.communication_styles,
             related_context=related_context,
+            user_id=job.user_id,
+            gmail_thread_id=thread_id,
         )
 
         # Trash any stale drafts from previous attempts
@@ -431,6 +437,8 @@ class WorkerPool:
                 msg.sender_email,
                 msg.subject,
                 thread_body,
+                user_id=job.user_id,
+                gmail_thread_id=thread_id,
             )
             if not ctx.is_empty:
                 related_context = ctx.format_for_prompt()
@@ -446,6 +454,8 @@ class WorkerPool:
             user_instructions=user_instructions,
             style_config=settings.communication_styles,
             related_context=related_context,
+            user_id=job.user_id,
+            gmail_thread_id=thread_id,
         )
 
         # Trash user's notes draft and any stale AI drafts from previous attempts

@@ -39,6 +39,7 @@ class ClassificationEngine:
         blacklist: list[str],
         contacts_config: dict,
         headers: dict[str, str] | None = None,
+        **llm_kwargs,
     ) -> Classification:
         """Classify an email: rules first, then LLM if needed.
 
@@ -78,6 +79,7 @@ class ClassificationEngine:
             user_message=build_classify_user_message(
                 sender_email, sender_name, subject, snippet, body, message_count
             ),
+            **llm_kwargs,
         )
 
         category = llm_result.category

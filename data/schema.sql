@@ -67,3 +67,26 @@ CREATE TABLE IF NOT EXISTS email_events (
 
 CREATE INDEX IF NOT EXISTS idx_events_thread ON email_events(gmail_thread_id);
 CREATE INDEX IF NOT EXISTS idx_events_type ON email_events(event_type);
+
+-- LLM call logging: track all LLM API calls for debugging and cost monitoring
+CREATE TABLE IF NOT EXISTS llm_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id),
+    gmail_thread_id TEXT,
+    call_type TEXT NOT NULL CHECK (call_type IN ('classify', 'draft', 'rework', 'context')),
+    model TEXT NOT NULL,
+    system_prompt TEXT,
+    user_message TEXT,
+    response_text TEXT,
+    prompt_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    latency_ms INTEGER DEFAULT 0,
+    error TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_calls_thread ON llm_calls(gmail_thread_id);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_type ON llm_calls(call_type);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_user ON llm_calls(user_id);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_created ON llm_calls(created_at);
