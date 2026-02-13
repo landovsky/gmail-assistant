@@ -7,6 +7,7 @@ Usage:
     bin/cleanup-drafts              # Dry run (list only)
     bin/cleanup-drafts --delete     # Actually delete
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,6 +22,7 @@ from googleapiclient.discovery import build
 from src.config import AppConfig
 from src.gmail.auth import GmailAuth
 from src.gmail.models import Message
+from src.gmail.retry import execute_with_retry
 
 SCISSORS = "\u2702\ufe0f"  # ✂️
 
@@ -41,7 +43,7 @@ def list_all_drafts(api) -> list[dict]:
         params = {"userId": "me", "maxResults": 100}
         if page_token:
             params["pageToken"] = page_token
-        result = api.drafts().list(**params).execute()
+        result = execute_with_retry(api.drafts().list(**params), operation="drafts.list")
         drafts.extend(result.get("drafts", []))
         page_token = result.get("nextPageToken")
         if not page_token:
@@ -66,7 +68,10 @@ def main():
 
     for i, draft_stub in enumerate(drafts):
         draft_id = draft_stub["id"]
-        data = api.drafts().get(userId="me", id=draft_id, format="full").execute()
+        data = execute_with_retry(
+            api.drafts().get(userId="me", id=draft_id, format="full"),
+            operation=f"drafts.get({draft_id})",
+        )
         msg_data = data.get("message", {})
         msg = Message.from_api(msg_data)
 
@@ -92,7 +97,10 @@ def main():
     deleted = 0
     for draft_id, subject in to_delete:
         try:
-            api.drafts().delete(userId="me", id=draft_id).execute()
+            execute_with_retry(
+                api.drafts().delete(userId="me", id=draft_id),
+                operation=f"drafts.delete({draft_id})",
+            )
             deleted += 1
             print(f"  Deleted: {subject}")
         except Exception as e:
