@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""Test classification accuracy — run predefined emails through ClassificationEngine.
+
+Usage:
+    # Rules-only (no API key needed, LLM cases shown as SKIPPED):
+    bin/test-classification --rules-only
+
+    # Full pipeline with LLM (requires ANTHROPIC_API_KEY):
+    bin/test-classification
+
+    # Verbose output for a single case:
+    bin/test-classification --verbose --id fyi-03
+
+    # Filter by category:
+    bin/test-classification --filter waiting
+
+    # Custom fixture file:
+    bin/test-classification --cases tests/fixtures/my_cases.yaml
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+import yaml
+
+# Add project root to path
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+from src.classify.engine import ClassificationEngine  # noqa: E402
+from src.llm.config import LLMConfig  # noqa: E402
+from src.llm.gateway import ClassifyResult, LLMGateway  # noqa: E402
+
+# ── ANSI colors ──────────────────────────────────────────────────────────────
+
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+DEFAULT_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "classification_cases.yaml"
+
+CATEGORY_COLORS = {
+    "needs_response": GREEN,
+    "action_required": RED,
+    "payment_request": YELLOW,
+    "fyi": DIM,
+    "waiting": CYAN,
+}
+
+
+# ── Stub gateway for --rules-only mode ───────────────────────────────────────
+
+
+class StubGateway:
+    """Duck-typed LLMGateway that returns a fixed result. For --rules-only mode."""
+
+    def classify(self, system: str, user_message: str) -> ClassifyResult:
+        return ClassifyResult(
+            category="needs_response",
+            confidence="low",
+            reasoning="[skipped]",
+        )
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def load_cases(path: Path) -> tuple[dict, list[dict]]:
+    """Load YAML fixture, return (defaults, cases)."""
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    defaults = data.get("defaults", {})
+    cases = data.get("cases", [])
+    return defaults, cases
+
+
+def merge_defaults(case: dict, defaults: dict) -> dict:
+    """Merge defaults into case — case values take priority."""
+    merged = dict(defaults)
+    merged.update({k: v for k, v in case.items() if v is not None})
+    return merged
+
+
+def color_category(category: str) -> str:
+    c = CATEGORY_COLORS.get(category, "")
+    return f"{c}{category}{RESET}"
+
+
+def print_verbose_case(case: dict) -> None:
+    """Print email details for a single case."""
+    print(f"    {DIM}From: {case.get('sender_name', '')} <{case['sender_email']}>{RESET}")
+    print(f"    {DIM}Subject: {case['subject']}{RESET}")
+    body = case.get("body", "")
+    if len(body) > 120:
+        body = body[:120] + "…"
+    print(f"    {DIM}Body: {body}{RESET}")
+
+
+def print_verbose_result(result) -> None:
+    """Print classification result details."""
+    print(f"    {DIM}Confidence: {result.confidence}{RESET}")
+    print(f"    {DIM}Source: {result.source}{RESET}")
+    print(f"    {DIM}Reasoning: {result.reasoning}{RESET}")
+
+
+def print_confusion_matrix(
+    results: list[tuple[str, str, str]],
+) -> None:
+    """Print confusion matrix for mismatched cases.
+
+    results: list of (case_id, expected, actual) for failed cases.
+    """
+    # Collect all categories involved
+    categories = sorted(
+        {cat for _, exp, act in results for cat in (exp, act)}
+    )
+
+    # Build matrix
+    matrix: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for _, expected, actual in results:
+        matrix[expected][actual] += 1
+
+    # Print
+    col_width = max(len(c) for c in categories) + 2
+    header = "expected \\ actual".ljust(col_width)
+    for cat in categories:
+        header += cat.rjust(col_width)
+    print(f"  {header}")
+
+    for exp in categories:
+        row = exp.ljust(col_width)
+        for act in categories:
+            count = matrix[exp][act]
+            cell = str(count) if count else "·"
+            if exp != act and count:
+                cell = f"{RED}{cell}{RESET}"
+            row += cell.rjust(col_width)
+        print(f"  {row}")
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+
+def run(args: argparse.Namespace) -> int:
+    # Load fixture
+    fixture_path = Path(args.cases) if args.cases else DEFAULT_FIXTURE
+    if not fixture_path.exists():
+        print(f"{RED}Fixture file not found: {fixture_path}{RESET}")
+        return 1
+
+    defaults, cases = load_cases(fixture_path)
+    if not cases:
+        print(f"{RED}No cases found in {fixture_path}{RESET}")
+        return 1
+
+    # Filter cases
+    if args.filter:
+        cases = [c for c in cases if c.get("expected_category") == args.filter]
+    if args.id:
+        cases = [c for c in cases if c.get("id") == args.id]
+
+    if not cases:
+        print(f"{YELLOW}No cases matched the filter.{RESET}")
+        return 0
+
+    # Init engine
+    rules_only = args.rules_only
+    if rules_only:
+        gateway = StubGateway()
+    else:
+        config = LLMConfig()
+        gateway = LLMGateway(config)
+
+    engine = ClassificationEngine(gateway)
+
+    # Run cases
+    passed = 0
+    failed = 0
+    skipped = 0
+    failures: list[tuple[str, str, str]] = []  # (id, expected, actual)
+    tier_counts = {"rules": 0, "llm": 0}
+
+    mode_label = f"{YELLOW}rules-only{RESET}" if rules_only else f"{GREEN}full pipeline{RESET}"
+    print(f"\n{BOLD}Classification test suite{RESET}  ({mode_label}, {len(cases)} cases)")
+    print(f"{'─' * 70}")
+
+    for case in cases:
+        merged = merge_defaults(case, defaults)
+        case_id = merged["id"]
+        description = merged.get("description", "")
+        expected = merged["expected_category"]
+
+        if args.verbose:
+            print()
+            print_verbose_case(merged)
+
+        result = engine.classify(
+            sender_email=merged["sender_email"],
+            sender_name=merged.get("sender_name", ""),
+            subject=merged.get("subject", ""),
+            snippet=merged.get("snippet", ""),
+            body=merged.get("body", ""),
+            message_count=merged.get("message_count", 1),
+            blacklist=merged.get("blacklist", []),
+            contacts_config=merged.get("contacts_config", {}),
+        )
+
+        actual = result.category
+        source = result.source
+        tier_counts[source] += 1
+
+        # Determine outcome
+        is_skipped = rules_only and source == "llm"
+
+        if is_skipped:
+            skipped += 1
+            status = f"{YELLOW}SKIP{RESET}"
+        elif actual == expected:
+            passed += 1
+            status = f"{GREEN}PASS{RESET}"
+        else:
+            failed += 1
+            status = f"{RED}FAIL{RESET}"
+            failures.append((case_id, expected, actual))
+
+        tier_label = f"[{source}]"
+        print(
+            f"  [{BOLD}{case_id}{RESET}] {description:<55} "
+            f"expected: {color_category(expected):>30}  "
+            f"actual: {color_category(actual):>30}  "
+            f"{DIM}{tier_label:<7}{RESET} {status}"
+        )
+
+        if args.verbose:
+            print_verbose_result(result)
+
+    # Summary
+    print(f"\n{'─' * 70}")
+    total = passed + failed + skipped
+    accuracy_base = passed + failed
+    accuracy = (passed / accuracy_base * 100) if accuracy_base > 0 else 0
+
+    print(f"  {BOLD}Total:{RESET} {total}  ", end="")
+    print(f"{GREEN}Passed: {passed}{RESET}  ", end="")
+    if failed:
+        print(f"{RED}Failed: {failed}{RESET}  ", end="")
+    else:
+        print(f"Failed: {failed}  ", end="")
+    if skipped:
+        print(f"{YELLOW}Skipped: {skipped}{RESET}  ", end="")
+    print()
+
+    if accuracy_base > 0:
+        acc_color = GREEN if accuracy == 100 else (YELLOW if accuracy >= 80 else RED)
+        print(f"  {BOLD}Accuracy:{RESET} {acc_color}{accuracy:.0f}%{RESET} ({passed}/{accuracy_base})")
+
+    print(f"  {BOLD}By tier:{RESET} rules={tier_counts['rules']}, llm={tier_counts['llm']}")
+
+    # Confusion matrix on failures
+    if failures:
+        print(f"\n{BOLD}Confusion matrix (failures only):{RESET}")
+        print_confusion_matrix(failures)
+
+    print()
+    return 1 if failed else 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Test classification accuracy against predefined email fixtures",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        "--rules-only",
+        action="store_true",
+        help="Use stub LLM gateway (no API key needed, LLM cases skipped)",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show reasoning and email details per case",
+    )
+    parser.add_argument(
+        "--cases",
+        help=f"Custom YAML fixture path (default: {DEFAULT_FIXTURE.relative_to(REPO_ROOT)})",
+    )
+    parser.add_argument(
+        "--filter",
+        help="Run only cases for one expected category",
+    )
+    parser.add_argument(
+        "--id",
+        help="Run a single case by ID",
+    )
+    args = parser.parse_args()
+    return run(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
