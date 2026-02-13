@@ -9,9 +9,9 @@ from src.config import AppConfig
 
 @dataclass
 class LLMConfig:
-    classify_model: str = "claude-haiku-4-5-20251001"
-    draft_model: str = "claude-sonnet-4-5-20250929"
-    context_model: str = "claude-haiku-4-5-20251001"
+    classify_model: str = "gemini/gemini-2.0-flash"
+    draft_model: str = "gemini/gemini-2.5-pro"
+    context_model: str = "gemini/gemini-2.0-flash"
     max_classify_tokens: int = 256
     max_draft_tokens: int = 2048
     max_context_tokens: int = 256
