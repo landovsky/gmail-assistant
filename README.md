@@ -239,6 +239,27 @@ GET /api/briefing/{email}                # Inbox summary for a user
 
 Returns classification counts, active items per category, and pending draft count.
 
+### Admin UI
+
+```
+GET /admin                                   # Admin interface (read-only)
+```
+
+Web-based debugging interface with full visibility into:
+- **Emails:** Classification decisions, reasoning, status
+- **LLM Calls:** Complete prompts, responses, tokens, latency
+- **Events:** Audit trail of all state transitions
+- **Users, Labels, Settings, Jobs:** System configuration and queue
+
+**Features:**
+- 🔍 Search by subject, sender, or thread ID
+- 🧠 View full LLM prompts and responses
+- 📊 Track token usage and costs
+- ⚡ Monitor performance (latency tracking)
+- 🔒 Read-only (safe for production)
+
+See [Admin UI Guide](docs/admin-ui-guide.md) for complete documentation.
+
 ---
 
 ## How it works
