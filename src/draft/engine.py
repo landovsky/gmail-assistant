@@ -33,6 +33,7 @@ class DraftEngine:
         resolved_style: str,
         user_instructions: str | None = None,
         style_config: dict | None = None,
+        related_context: str | None = None,
     ) -> str:
         """Generate a draft reply. Returns the full draft body with rework marker."""
         if style_config is None:
@@ -40,7 +41,8 @@ class DraftEngine:
 
         system_prompt = build_draft_system_prompt(style_config, resolved_style)
         user_message = build_draft_user_message(
-            sender_email, sender_name, subject, thread_body, user_instructions
+            sender_email, sender_name, subject, thread_body,
+            user_instructions, related_context,
         )
 
         raw_draft = self.llm.draft(system_prompt, user_message)

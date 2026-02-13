@@ -48,6 +48,7 @@ def build_draft_user_message(
     subject: str,
     thread_body: str,
     user_instructions: str | None = None,
+    related_context: str | None = None,
 ) -> str:
     """Build the user message for draft generation."""
     parts = [
@@ -57,6 +58,9 @@ def build_draft_user_message(
         "Thread:",
         thread_body[:3000],
     ]
+
+    if related_context:
+        parts.extend(["", related_context])
 
     if user_instructions:
         parts.extend([

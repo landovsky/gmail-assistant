@@ -14,6 +14,7 @@ from src.api.briefing import router as briefing_router
 from src.api.webhook import router as webhook_router
 from src.classify.engine import ClassificationEngine
 from src.config import AppConfig
+from src.context.gatherer import ContextGatherer
 from src.db.connection import init_db
 from src.draft.engine import DraftEngine
 from src.gmail.client import GmailService
@@ -43,9 +44,13 @@ async def lifespan(app: FastAPI):
     llm_gateway = LLMGateway(llm_config)
     classification_engine = ClassificationEngine(llm_gateway)
     draft_engine = DraftEngine(llm_gateway)
+    context_gatherer = ContextGatherer(llm_gateway)
 
     # Start worker pool
-    _worker_pool = WorkerPool(db, gmail_service, classification_engine, draft_engine, config)
+    _worker_pool = WorkerPool(
+        db, gmail_service, classification_engine, draft_engine, config,
+        context_gatherer=context_gatherer,
+    )
     _bg_tasks.append(asyncio.create_task(_worker_pool.start()))
 
     # Start scheduler (watch renewal + fallback sync)

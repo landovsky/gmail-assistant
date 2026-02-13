@@ -13,6 +13,7 @@ from typing import Any
 
 from src.classify.engine import ClassificationEngine
 from src.config import AppConfig
+from src.context.gatherer import ContextGatherer
 from src.db.connection import Database
 from src.db.models import (
     EmailRecord,
@@ -41,11 +42,13 @@ class WorkerPool:
         classification_engine: ClassificationEngine,
         draft_engine: DraftEngine,
         config: AppConfig,
+        context_gatherer: ContextGatherer | None = None,
     ):
         self.db = db
         self.gmail_service = gmail_service
         self.classification_engine = classification_engine
         self.draft_engine = draft_engine
+        self.context_gatherer = context_gatherer
         self.config = config
         self.jobs = JobRepository(db)
         self.users = UserRepository(db)
@@ -222,6 +225,20 @@ class WorkerPool:
         settings = await asyncio.to_thread(UserSettings, self.db, job.user_id)
         thread_body = "\n---\n".join(m.body[:1000] for m in thread.messages)
 
+        # Gather related context (fail-safe — empty on error)
+        related_context: str | None = None
+        if self.context_gatherer:
+            ctx = await asyncio.to_thread(
+                self.context_gatherer.gather,
+                gmail_client,
+                thread_id,
+                email["sender_email"],
+                email.get("subject", ""),
+                thread_body,
+            )
+            if not ctx.is_empty:
+                related_context = ctx.format_for_prompt()
+
         # Generate draft (LLM call)
         draft_body = await asyncio.to_thread(
             self.draft_engine.generate_draft,
@@ -231,6 +248,7 @@ class WorkerPool:
             thread_body=thread_body,
             resolved_style=email.get("resolved_style", "business"),
             style_config=settings.communication_styles,
+            related_context=related_context,
         )
 
         # Create Gmail draft
