@@ -297,6 +297,86 @@ class LLMGateway:
 
             return "[]"
 
+    def agent_completion(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        model: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+        **kwargs: Any,
+    ) -> Any:
+        """Call LLM with tool-use support for the agent loop.
+
+        Args:
+            messages: Full conversation history (system + user + assistant + tool results)
+            tools: Tool definitions in OpenAI function-calling format
+            model: Model to use (defaults to draft model)
+            max_tokens: Max tokens for response
+            temperature: Sampling temperature
+            **kwargs: Optional user_id and gmail_thread_id for logging
+        """
+        user_id = kwargs.get("user_id")
+        gmail_thread_id = kwargs.get("gmail_thread_id")
+        used_model = model or self.config.draft_model
+        start_time = time.monotonic()
+
+        try:
+            completion_kwargs: dict[str, Any] = {
+                "model": used_model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }
+            if tools:
+                completion_kwargs["tools"] = tools
+
+            response = litellm.completion(**completion_kwargs)
+            latency_ms = int((time.monotonic() - start_time) * 1000)
+
+            usage = getattr(response, "usage", None)
+            prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
+            completion_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
+            total_tokens = getattr(usage, "total_tokens", 0) if usage else 0
+
+            response_text = ""
+            message = response.choices[0].message
+            if message.content:
+                response_text = message.content
+
+            if self.call_repo:
+                self.call_repo.log(
+                    call_type="agent",
+                    model=used_model,
+                    user_id=user_id,
+                    gmail_thread_id=gmail_thread_id,
+                    system_prompt=messages[0]["content"] if messages else None,
+                    user_message=str(len(messages)) + " messages",
+                    response_text=response_text[:2000] if response_text else None,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    latency_ms=latency_ms,
+                )
+
+            return response
+        except Exception as e:
+            logger.error("LLM agent completion failed: %s", e)
+            latency_ms = int((time.monotonic() - start_time) * 1000)
+
+            if self.call_repo:
+                self.call_repo.log(
+                    call_type="agent",
+                    model=used_model,
+                    user_id=user_id,
+                    gmail_thread_id=gmail_thread_id,
+                    system_prompt=messages[0]["content"] if messages else None,
+                    user_message=str(len(messages)) + " messages",
+                    latency_ms=latency_ms,
+                    error=str(e),
+                )
+            raise
+
     def health_check(self) -> dict[str, bool]:
         """Check if LLM models are reachable."""
         results = {}

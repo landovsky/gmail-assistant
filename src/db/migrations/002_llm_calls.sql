@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id),
     gmail_thread_id TEXT,
-    call_type TEXT NOT NULL CHECK (call_type IN ('classify', 'draft', 'rework', 'context')),
+    call_type TEXT NOT NULL CHECK (call_type IN ('classify', 'draft', 'rework', 'context', 'agent')),
     model TEXT NOT NULL,
     system_prompt TEXT,
     user_message TEXT,

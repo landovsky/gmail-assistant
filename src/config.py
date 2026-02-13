@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -81,6 +80,47 @@ class ServerConfig(BaseSettings):
     model_config = {"env_prefix": "GMA_SERVER_"}
 
 
+class RoutingRuleConfig(BaseSettings):
+    """A single routing rule."""
+
+    name: str = ""
+    match: dict[str, Any] = Field(default_factory=dict)
+    route: str = "pipeline"
+    profile: str = ""
+
+    model_config = {"env_prefix": "GMA_ROUTING_RULE_"}
+
+
+class RoutingConfig(BaseSettings):
+    """Routing configuration — config-driven rules for routing emails."""
+
+    rules: list[RoutingRuleConfig] = Field(default_factory=list)
+
+    model_config = {"env_prefix": "GMA_ROUTING_"}
+
+
+class AgentProfileConfig(BaseSettings):
+    """Configuration for a single agent profile."""
+
+    name: str = ""
+    model: str = "gemini/gemini-2.5-pro"
+    max_tokens: int = 4096
+    temperature: float = 0.3
+    max_iterations: int = 10
+    system_prompt_file: str = ""
+    tools: list[str] = Field(default_factory=list)
+
+    model_config = {"env_prefix": "GMA_AGENT_PROFILE_"}
+
+
+class AgentConfig(BaseSettings):
+    """Agent framework configuration."""
+
+    profiles: dict[str, AgentProfileConfig] = Field(default_factory=dict)
+
+    model_config = {"env_prefix": "GMA_AGENT_"}
+
+
 class AppConfig(BaseSettings):
     """Top-level application configuration."""
 
@@ -89,6 +129,8 @@ class AppConfig(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     sync: SyncConfig = Field(default_factory=SyncConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    routing: RoutingConfig = Field(default_factory=RoutingConfig)
+    agent: AgentConfig = Field(default_factory=AgentConfig)
 
     # Environment & Sentry
     environment: str = "development"

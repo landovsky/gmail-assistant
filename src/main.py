@@ -49,6 +49,27 @@ async def lifespan(app: FastAPI):
     draft_engine = DraftEngine(llm_gateway)
     context_gatherer = ContextGatherer(llm_gateway)
 
+    # Set up routing and agent infrastructure
+    from src.agent.loop import AgentLoop
+    from src.agent.profile import AgentProfile
+    from src.agent.tools import ToolRegistry
+    from src.agent.tools.pharmacy import register_pharmacy_tools
+    from src.routing.router import Router
+
+    router = Router(config.routing)
+
+    # Build tool registry
+    tool_registry = ToolRegistry()
+    register_pharmacy_tools(tool_registry)
+
+    # Build agent profiles from config
+    agent_profiles: dict[str, AgentProfile] = {}
+    for name, profile_config in config.agent.profiles.items():
+        profile_config.name = name
+        agent_profiles[name] = AgentProfile.from_config(profile_config)
+
+    agent_loop = AgentLoop(llm_gateway, tool_registry) if agent_profiles else None
+
     # Start worker pool
     _worker_pool = WorkerPool(
         db,
@@ -57,6 +78,9 @@ async def lifespan(app: FastAPI):
         draft_engine,
         config,
         context_gatherer=context_gatherer,
+        agent_loop=agent_loop,
+        agent_profiles=agent_profiles,
+        router=router,
     )
     _bg_tasks.append(asyncio.create_task(_worker_pool.start()))
 

@@ -82,19 +82,55 @@ class UserRepository:
     def get_by_email(self, email: str) -> User | None:
         row = self.db.execute_one("SELECT * FROM users WHERE email = ?", (email,))
         if row:
-            return User(**{k: row[k] for k in ("id", "email", "display_name", "is_active", "onboarded_at", "created_at")})
+            return User(
+                **{
+                    k: row[k]
+                    for k in (
+                        "id",
+                        "email",
+                        "display_name",
+                        "is_active",
+                        "onboarded_at",
+                        "created_at",
+                    )
+                }
+            )
         return None
 
     def get_by_id(self, user_id: int) -> User | None:
         row = self.db.execute_one("SELECT * FROM users WHERE id = ?", (user_id,))
         if row:
-            return User(**{k: row[k] for k in ("id", "email", "display_name", "is_active", "onboarded_at", "created_at")})
+            return User(
+                **{
+                    k: row[k]
+                    for k in (
+                        "id",
+                        "email",
+                        "display_name",
+                        "is_active",
+                        "onboarded_at",
+                        "created_at",
+                    )
+                }
+            )
         return None
 
     def get_active_users(self) -> list[User]:
         rows = self.db.execute("SELECT * FROM users WHERE is_active = 1")
         return [
-            User(**{k: r[k] for k in ("id", "email", "display_name", "is_active", "onboarded_at", "created_at")})
+            User(
+                **{
+                    k: r[k]
+                    for k in (
+                        "id",
+                        "email",
+                        "display_name",
+                        "is_active",
+                        "onboarded_at",
+                        "created_at",
+                    )
+                }
+            )
             for r in rows
         ]
 
@@ -111,7 +147,9 @@ class LabelRepository:
     def __init__(self, db: Database):
         self.db = db
 
-    def set_label(self, user_id: int, label_key: str, gmail_label_id: str, gmail_label_name: str) -> None:
+    def set_label(
+        self, user_id: int, label_key: str, gmail_label_id: str, gmail_label_name: str
+    ) -> None:
         self.db.execute_write(
             """INSERT OR REPLACE INTO user_labels (user_id, label_key, gmail_label_id, gmail_label_name)
                VALUES (?, ?, ?, ?)""",
@@ -172,9 +210,7 @@ class SyncStateRepository:
         self.db = db
 
     def get(self, user_id: int) -> dict[str, Any] | None:
-        return self.db.execute_one(
-            "SELECT * FROM sync_state WHERE user_id = ?", (user_id,)
-        )
+        return self.db.execute_one("SELECT * FROM sync_state WHERE user_id = ?", (user_id,))
 
     def upsert(self, user_id: int, history_id: str) -> None:
         self.db.execute_write(
@@ -221,10 +257,19 @@ class EmailRepository:
                 message_count = excluded.message_count,
                 updated_at = CURRENT_TIMESTAMP""",
             (
-                record.user_id, record.gmail_thread_id, record.gmail_message_id,
-                record.sender_email, record.sender_name, record.subject, record.snippet,
-                record.received_at, record.classification, record.confidence,
-                record.reasoning, record.detected_language, record.resolved_style,
+                record.user_id,
+                record.gmail_thread_id,
+                record.gmail_message_id,
+                record.sender_email,
+                record.sender_name,
+                record.subject,
+                record.snippet,
+                record.received_at,
+                record.classification,
+                record.confidence,
+                record.reasoning,
+                record.detected_language,
+                record.resolved_style,
                 record.message_count,
             ),
         )
@@ -274,7 +319,9 @@ class EmailRepository:
             (draft_id, user_id, thread_id),
         )
 
-    def increment_rework(self, user_id: int, thread_id: str, draft_id: str, instruction: str) -> None:
+    def increment_rework(
+        self, user_id: int, thread_id: str, draft_id: str, instruction: str
+    ) -> None:
         self.db.execute_write(
             """UPDATE emails SET rework_count = rework_count + 1,
                draft_id = ?, last_rework_instruction = ?,
@@ -344,10 +391,18 @@ class LLMCallRepository:
                 latency_ms, error
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                user_id, gmail_thread_id, call_type, model,
-                system_prompt, user_message, response_text,
-                prompt_tokens, completion_tokens, total_tokens,
-                latency_ms, error,
+                user_id,
+                gmail_thread_id,
+                call_type,
+                model,
+                system_prompt,
+                user_message,
+                response_text,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+                latency_ms,
+                error,
             ),
         )
 
@@ -382,6 +437,60 @@ class LLMCallRepository:
             params,
         )
         return result or {}
+
+
+class AgentRunRepository:
+    """Database operations for agent run tracking."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def create(
+        self,
+        user_id: int,
+        gmail_thread_id: str,
+        profile: str,
+    ) -> int:
+        """Create a new agent run record. Returns the run ID."""
+        return self.db.execute_write(
+            """INSERT INTO agent_runs (user_id, gmail_thread_id, profile, status)
+               VALUES (?, ?, ?, 'running')""",
+            (user_id, gmail_thread_id, profile),
+        )
+
+    def complete(
+        self,
+        run_id: int,
+        status: str,
+        tool_calls_log: str,
+        final_message: str = "",
+        iterations: int = 0,
+        error: str | None = None,
+    ) -> None:
+        """Mark an agent run as completed (or errored)."""
+        self.db.execute_write(
+            """UPDATE agent_runs
+               SET status = ?, tool_calls_log = ?, final_message = ?,
+                   iterations = ?, error = ?, completed_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (status, tool_calls_log, final_message, iterations, error, run_id),
+        )
+
+    def get_by_thread(self, user_id: int, thread_id: str) -> list[dict[str, Any]]:
+        """Get all agent runs for a thread."""
+        return self.db.execute(
+            """SELECT * FROM agent_runs
+               WHERE user_id = ? AND gmail_thread_id = ?
+               ORDER BY created_at""",
+            (user_id, thread_id),
+        )
+
+    def get_recent(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Get recent agent runs for monitoring."""
+        return self.db.execute(
+            "SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
 
 
 class JobRepository:

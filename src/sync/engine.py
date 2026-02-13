@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.config import SyncConfig
 from src.db.connection import Database
@@ -17,6 +17,9 @@ from src.db.models import (
 )
 from src.gmail.client import UserGmailClient
 from src.gmail.models import HistoryRecord
+
+if TYPE_CHECKING:
+    from src.routing.router import Router
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +36,12 @@ class SyncResult:
 class SyncEngine:
     """Incremental mailbox sync using Gmail History API."""
 
-    def __init__(self, db: Database, sync_config: SyncConfig | None = None):
+    def __init__(
+        self,
+        db: Database,
+        sync_config: SyncConfig | None = None,
+        router: Router | None = None,
+    ):
         self.db = db
         self.sync_config = sync_config or SyncConfig()
         self.sync_state = SyncStateRepository(db)
@@ -41,6 +49,7 @@ class SyncEngine:
         self.events = EventRepository(db)
         self.labels_repo = LabelRepository(db)
         self.jobs = JobRepository(db)
+        self.router = router
 
     def sync_user(
         self,
@@ -136,17 +145,34 @@ class SyncEngine:
         waiting_label = label_ids.get("waiting")
         needs_response_label = label_ids.get("needs_response")
 
-        # New messages → queue classification
+        # New messages → route to classify or agent_process
         for msg in record.messages_added:
             if "INBOX" in msg.label_ids:
-                key = ("classify", msg.thread_id)
+                # Check routing rules if router is available
+                job_type = "classify"
+                payload: dict[str, Any] = {
+                    "message_id": msg.id,
+                    "thread_id": msg.thread_id,
+                }
+
+                if self.router:
+                    message_meta = {
+                        "sender_email": msg.sender_email,
+                        "subject": msg.subject,
+                        "headers": msg.headers,
+                        "body": msg.body,
+                    }
+                    decision = self.router.route(message_meta)
+                    if decision.route_name == "agent":
+                        job_type = "agent_process"
+                        payload["profile"] = decision.profile_name
+                        payload["route_rule"] = decision.rule_name
+
+                key = (job_type, msg.thread_id)
                 if key in seen_jobs:
                     continue
                 seen_jobs.add(key)
-                self.jobs.enqueue("classify", user_id, {
-                    "message_id": msg.id,
-                    "thread_id": msg.thread_id,
-                })
+                self.jobs.enqueue(job_type, user_id, payload)
                 result.new_messages += 1
                 result.jobs_queued += 1
 
