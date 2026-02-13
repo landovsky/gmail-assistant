@@ -9,6 +9,9 @@ config/credentials.json
 config/token.json
 config/service-account-key.json
 
+# Beads
+.beads/export-state/
+
 # Python
 __pycache__/
 *.py[cod]
