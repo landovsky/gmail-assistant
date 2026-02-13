@@ -180,6 +180,18 @@ class UserGmailClient:
             logger.error("Failed to list drafts: %s", e)
             return []
 
+    def get_thread_draft(self, thread_id: str) -> Draft | None:
+        """Find a user-written draft belonging to a specific thread.
+
+        Lists all drafts and returns the first one matching the thread ID,
+        fetched with full body content. Returns None if no draft exists.
+        """
+        drafts = self.list_drafts()
+        for draft in drafts:
+            if draft.thread_id == thread_id:
+                return self.get_draft(draft.id)
+        return None
+
     def list_history(
         self,
         start_history_id: str,

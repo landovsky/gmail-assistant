@@ -12,6 +12,7 @@ import logging
 from typing import Any
 
 from src.classify.engine import ClassificationEngine
+from src.classify.rules import resolve_communication_style
 from src.config import AppConfig
 from src.context.gatherer import ContextGatherer
 from src.db.connection import Database
@@ -24,6 +25,7 @@ from src.db.models import (
     UserRepository,
 )
 from src.draft.engine import DraftEngine
+from src.draft.prompts import extract_rework_instruction
 from src.gmail.client import GmailService, UserGmailClient
 from src.lifecycle.manager import LifecycleManager
 from src.sync.engine import SyncEngine
@@ -112,6 +114,8 @@ class WorkerPool:
                 await self._handle_cleanup(job, gmail_client)
             elif job.job_type == "rework":
                 await self._handle_rework(job, gmail_client)
+            elif job.job_type == "manual_draft":
+                await self._handle_manual_draft(job, gmail_client)
             else:
                 await asyncio.to_thread(self.jobs.fail, job.id, f"Unknown job type: {job.job_type}")
                 return
@@ -324,3 +328,165 @@ class WorkerPool:
             gmail_client,
             style_config=settings.communication_styles,
         )
+
+    async def _handle_manual_draft(self, job: Any, gmail_client: UserGmailClient) -> None:
+        """Handle user manually applying Needs Response label.
+
+        Finds user's notes draft, extracts instructions, creates/updates the DB
+        record, generates an AI draft, and moves to Outbox.
+        """
+        message_id = job.payload.get("message_id", "")
+        if not message_id:
+            return
+
+        # Get the message to find thread_id and sender info
+        msg = await asyncio.to_thread(gmail_client.get_message, message_id)
+        if not msg:
+            return
+
+        thread_id = msg.thread_id
+
+        # Check if already drafted — avoid duplicate work
+        existing = await asyncio.to_thread(self.emails.get_by_thread, job.user_id, thread_id)
+        if existing and existing["status"] == "drafted":
+            return
+
+        # Get thread for context
+        thread = await asyncio.to_thread(gmail_client.get_thread, thread_id)
+        if not thread or not thread.latest_message:
+            return
+
+        # Look for user's notes draft in this thread
+        user_draft = await asyncio.to_thread(gmail_client.get_thread_draft, thread_id)
+        user_instructions: str | None = None
+        if user_draft and user_draft.message:
+            draft_body = user_draft.message.body
+            # Try extracting instructions above ✂️ marker first
+            instruction, _ = extract_rework_instruction(draft_body)
+            # If no marker, treat entire body as instructions
+            user_instructions = instruction if instruction else draft_body.strip()
+            if not user_instructions:
+                user_instructions = None
+
+        settings = await asyncio.to_thread(UserSettings, self.db, job.user_id)
+
+        # Ensure DB record exists with needs_response classification
+        if not existing:
+            # Create a new record from the Gmail message
+            resolved_style = resolve_communication_style(
+                msg.sender_email, settings.contacts
+            )
+            record = EmailRecord(
+                user_id=job.user_id,
+                gmail_thread_id=thread_id,
+                gmail_message_id=msg.id,
+                sender_email=msg.sender_email,
+                sender_name=msg.sender_name,
+                subject=msg.subject,
+                snippet=msg.snippet,
+                received_at=msg.internal_date,
+                classification="needs_response",
+                confidence="high",
+                reasoning="Manually requested by user",
+                detected_language="auto",
+                resolved_style=resolved_style,
+                message_count=thread.message_count,
+            )
+            await asyncio.to_thread(self.emails.upsert, record)
+        else:
+            # Reclassify existing record to needs_response + pending
+            resolved_style = existing.get("resolved_style", "business")
+            record = EmailRecord(
+                user_id=job.user_id,
+                gmail_thread_id=thread_id,
+                gmail_message_id=existing["gmail_message_id"],
+                sender_email=existing["sender_email"],
+                sender_name=existing.get("sender_name"),
+                subject=existing.get("subject"),
+                snippet=existing.get("snippet"),
+                received_at=existing.get("received_at"),
+                classification="needs_response",
+                confidence="high",
+                reasoning="Reclassified: manually requested by user",
+                detected_language=existing.get("detected_language", "auto"),
+                resolved_style=resolved_style,
+                message_count=thread.message_count,
+            )
+            await asyncio.to_thread(self.emails.upsert, record)
+
+        # Re-fetch email record after upsert
+        email = await asyncio.to_thread(self.emails.get_by_thread, job.user_id, thread_id)
+
+        thread_body = "\n---\n".join(m.body[:1000] for m in thread.messages)
+
+        # Gather related context
+        related_context: str | None = None
+        if self.context_gatherer:
+            ctx = await asyncio.to_thread(
+                self.context_gatherer.gather,
+                gmail_client,
+                thread_id,
+                msg.sender_email,
+                msg.subject,
+                thread_body,
+            )
+            if not ctx.is_empty:
+                related_context = ctx.format_for_prompt()
+
+        # Generate AI draft with user instructions
+        draft_body = await asyncio.to_thread(
+            self.draft_engine.generate_draft,
+            sender_email=email["sender_email"],
+            sender_name=email.get("sender_name", ""),
+            subject=email.get("subject", ""),
+            thread_body=thread_body,
+            resolved_style=email.get("resolved_style", "business"),
+            user_instructions=user_instructions,
+            style_config=settings.communication_styles,
+            related_context=related_context,
+        )
+
+        # Trash user's notes draft (if it exists)
+        if user_draft:
+            await asyncio.to_thread(gmail_client.trash_draft, user_draft.id)
+
+        # Create the AI draft
+        latest = thread.latest_message
+        draft_id = await asyncio.to_thread(
+            gmail_client.create_draft,
+            thread_id=thread_id,
+            to=email["sender_email"],
+            subject=email.get("subject", ""),
+            body=draft_body,
+            in_reply_to=latest.headers.get("Message-ID"),
+        )
+
+        if not draft_id:
+            raise RuntimeError(f"Failed to create draft for thread {thread_id}")
+
+        # Move label: Needs Response → Outbox
+        label_ids = await asyncio.to_thread(self.labels_repo.get_labels, job.user_id)
+        needs_resp = label_ids.get("needs_response")
+        outbox = label_ids.get("outbox")
+        if needs_resp and outbox:
+            msg_ids = [m.id for m in thread.messages]
+            await asyncio.to_thread(
+                gmail_client.batch_modify_labels, msg_ids, add=[outbox], remove=[needs_resp]
+            )
+
+        # Update DB
+        await asyncio.to_thread(self.emails.update_draft, job.user_id, thread_id, draft_id)
+
+        detail = "Manual draft created"
+        if user_instructions:
+            detail += f" with instructions: {user_instructions[:100]}"
+        await asyncio.to_thread(
+            self.events.log,
+            job.user_id,
+            thread_id,
+            "manual_draft_created",
+            detail,
+            draft_id=draft_id,
+        )
+
+        logger.info("Created manual draft for thread %s", thread_id)
