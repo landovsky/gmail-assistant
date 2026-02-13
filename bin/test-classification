@@ -1,12 +1,21 @@
-#!/usr/bin/env python3
-"""Test classification accuracy — run predefined emails through ClassificationEngine.
+#!/bin/bash
+""":" # noqa
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VENV="$SCRIPT_DIR/../.venv/bin/python"
+if [ -x "$VENV" ]; then exec "$VENV" "$0" "$@"; fi
+exec python3 "$0" "$@"
+
+Test classification accuracy — run predefined emails through ClassificationEngine.
 
 Usage:
     # Rules-only (no API key needed, LLM cases shown as SKIPPED):
     bin/test-classification --rules-only
 
-    # Full pipeline with LLM (requires ANTHROPIC_API_KEY):
+    # Full pipeline with LLM (requires API key for configured model):
     bin/test-classification
+
+    # LLM-only (skip cases resolved by rules):
+    bin/test-classification --llm-only
 
     # Verbose output for a single case:
     bin/test-classification --verbose --id fyi-03
@@ -31,6 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.classify.engine import ClassificationEngine  # noqa: E402
+from src.config import AppConfig  # noqa: E402
 from src.llm.config import LLMConfig  # noqa: E402
 from src.llm.gateway import ClassifyResult, LLMGateway  # noqa: E402
 
@@ -175,7 +185,8 @@ def run(args: argparse.Namespace) -> int:
     if rules_only:
         gateway = StubGateway()
     else:
-        config = LLMConfig()
+        app_config = AppConfig.from_yaml()
+        config = LLMConfig.from_app_config(app_config)
         gateway = LLMGateway(config)
 
     engine = ClassificationEngine(gateway)
@@ -187,7 +198,12 @@ def run(args: argparse.Namespace) -> int:
     failures: list[tuple[str, str, str]] = []  # (id, expected, actual)
     tier_counts = {"rules": 0, "llm": 0}
 
-    mode_label = f"{YELLOW}rules-only{RESET}" if rules_only else f"{GREEN}full pipeline{RESET}"
+    if rules_only:
+        mode_label = f"{YELLOW}rules-only{RESET}"
+    elif args.llm_only:
+        mode_label = f"{CYAN}llm-only{RESET}"
+    else:
+        mode_label = f"{GREEN}full pipeline{RESET}"
     print(f"\n{BOLD}Classification test suite{RESET}  ({mode_label}, {len(cases)} cases)")
     print(f"{'─' * 70}")
 
@@ -217,7 +233,7 @@ def run(args: argparse.Namespace) -> int:
         tier_counts[source] += 1
 
         # Determine outcome
-        is_skipped = rules_only and source == "llm"
+        is_skipped = (rules_only and source == "llm") or (args.llm_only and source == "rules")
 
         if is_skipped:
             skipped += 1
@@ -284,6 +300,11 @@ def main() -> int:
         help="Use stub LLM gateway (no API key needed, LLM cases skipped)",
     )
     parser.add_argument(
+        "--llm-only",
+        action="store_true",
+        help="Run only LLM-classified cases (skip cases resolved by rules)",
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Show reasoning and email details per case",
@@ -301,6 +322,8 @@ def main() -> int:
         help="Run a single case by ID",
     )
     args = parser.parse_args()
+    if args.rules_only and args.llm_only:
+        parser.error("--rules-only and --llm-only are mutually exclusive")
     return run(args)
 
 
