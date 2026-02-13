@@ -154,6 +154,7 @@ class UserGmailClient:
         """Create a draft reply in a thread. Returns draft ID."""
         try:
             message = MIMEText(body)
+            message["from"] = self.user_email
             message["to"] = to
             message["subject"] = subject if subject.startswith("Re:") else f"Re: {subject}"
             if in_reply_to:

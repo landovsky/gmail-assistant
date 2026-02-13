@@ -284,7 +284,7 @@ class TestHandleManualDraft:
 
         # Should log event
         pool.events.log.assert_called_once()
-        assert "manual_draft_created" in pool.events.log.call_args[0]
+        assert "draft_created" in pool.events.log.call_args[0]
 
     @pytest.mark.asyncio
     async def test_manual_draft_existing_fyi_email(self):
