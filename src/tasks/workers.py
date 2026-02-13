@@ -164,6 +164,7 @@ class WorkerPool:
             message_count=1,
             blacklist=settings.blacklist,
             contacts_config=contacts,
+            headers=msg.headers,
         )
 
         # Apply Gmail label
@@ -373,9 +374,7 @@ class WorkerPool:
         # Ensure DB record exists with needs_response classification
         if not existing:
             # Create a new record from the Gmail message
-            resolved_style = resolve_communication_style(
-                msg.sender_email, settings.contacts
-            )
+            resolved_style = resolve_communication_style(msg.sender_email, settings.contacts)
             record = EmailRecord(
                 user_id=job.user_id,
                 gmail_thread_id=thread_id,

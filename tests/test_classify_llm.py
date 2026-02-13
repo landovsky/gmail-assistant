@@ -3,6 +3,7 @@
 Tests the ClassificationEngine end-to-end: rules + LLM fallback.
 Also tests the ClassifyResult parser for robustness.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,6 +16,7 @@ from src.llm.gateway import ClassifyResult, LLMGateway
 
 
 # ── ClassifyResult parser tests ──────────────────────────────────────────────
+
 
 class TestClassifyResultParser:
     """Test JSON parsing robustness of LLM responses."""
@@ -86,6 +88,7 @@ class TestClassifyResultParser:
 
 
 # ── ClassificationEngine integration tests ───────────────────────────────────
+
 
 class TestClassificationEngine:
     """Test the full two-tier pipeline with mocked LLM."""
@@ -224,3 +227,74 @@ class TestClassificationEngine:
             contacts_config={},
         )
         assert result.category == "needs_response"
+
+
+# ── Automated header safety net in engine ─────────────────────────────────
+
+
+class TestAutomatedHeaderOverride:
+    """When headers indicate automation, LLM needs_response is overridden to fyi."""
+
+    def _make_engine(self, llm_category: str = "needs_response") -> ClassificationEngine:
+        mock_gateway = MagicMock(spec=LLMGateway)
+        mock_gateway.classify.return_value = ClassifyResult(
+            category=llm_category,
+            confidence="high",
+            reasoning=f"LLM classified as {llm_category}",
+            detected_language="en",
+        )
+        return ClassificationEngine(mock_gateway)
+
+    def test_automated_header_overrides_llm_needs_response(self):
+        """If LLM says needs_response but email has List-Unsubscribe → fyi."""
+        engine = self._make_engine(llm_category="needs_response")
+        result = engine.classify(
+            sender_email="team@saas.com",
+            sender_name="SaaS Team",
+            subject="Quick question for you",
+            snippet="",
+            body="Just checking in on the project.",
+            message_count=1,
+            blacklist=[],
+            contacts_config={},
+            headers={"List-Unsubscribe": "<mailto:unsub@saas.com>"},
+        )
+        # Rules detected automation via header; no content pattern matched,
+        # so rules returned fyi/high/matched=True — LLM never called.
+        assert result.category == "fyi"
+        assert result.source == "rules"
+
+    def test_automated_header_allows_llm_action_required(self):
+        """Automated email where LLM returns action_required — keep it."""
+        engine = self._make_engine(llm_category="action_required")
+        # This email has no content pattern match, but has automation header.
+        # Rules will catch it and return fyi before LLM is called.
+        result = engine.classify(
+            sender_email="ci@builds.com",
+            sender_name="CI Bot",
+            subject="Build succeeded",
+            snippet="",
+            body="Your build passed all tests.",
+            message_count=1,
+            blacklist=[],
+            contacts_config={},
+            headers={"Auto-Submitted": "auto-generated"},
+        )
+        assert result.category == "fyi"
+        assert result.source == "rules"
+
+    def test_no_headers_llm_needs_response_preserved(self):
+        """Without automation headers, LLM needs_response is kept."""
+        engine = self._make_engine(llm_category="needs_response")
+        result = engine.classify(
+            sender_email="person@company.com",
+            sender_name="Person",
+            subject="Follow up",
+            snippet="",
+            body="Just following up on our conversation.",
+            message_count=1,
+            blacklist=[],
+            contacts_config={},
+        )
+        assert result.category == "needs_response"
+        assert result.source == "llm"
