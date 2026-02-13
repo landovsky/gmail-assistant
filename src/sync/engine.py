@@ -67,9 +67,10 @@ class SyncEngine:
             self.sync_state.upsert(user_id, notified_history_id or last_history_id)
             return result
 
-        # Process each history record
+        # Process each history record (track seen jobs to deduplicate per-thread)
+        seen_jobs: set[tuple[str, str]] = set()
         for record in records:
-            self._process_history_record(user_id, record, label_ids, result)
+            self._process_history_record(user_id, record, label_ids, result, seen_jobs)
 
         # Update stored historyId
         new_history_id = notified_history_id or records[-1].id
@@ -127,6 +128,7 @@ class SyncEngine:
         record: HistoryRecord,
         label_ids: dict[str, str],
         result: SyncResult,
+        seen_jobs: set[tuple[str, str]],
     ) -> None:
         """Process a single history record — dispatch to appropriate handlers."""
         done_label = label_ids.get("done")
@@ -137,6 +139,10 @@ class SyncEngine:
         # New messages → queue classification
         for msg in record.messages_added:
             if "INBOX" in msg.label_ids:
+                key = ("classify", msg.thread_id)
+                if key in seen_jobs:
+                    continue
+                seen_jobs.add(key)
                 self.jobs.enqueue("classify", user_id, {
                     "message_id": msg.id,
                     "thread_id": msg.thread_id,
@@ -144,26 +150,36 @@ class SyncEngine:
                 result.new_messages += 1
                 result.jobs_queued += 1
 
-        # Label additions
+        # Label additions — deduplicate per thread to avoid duplicate jobs
+        # (Gmail reports one label change per message in a thread)
         for item in record.labels_added:
             added_labels = item.get("label_ids", [])
             msg_id = item.get("message_id", "")
+            thread_id = item.get("thread_id", msg_id)
 
             if done_label and done_label in added_labels:
-                # User marked Done → queue cleanup
-                msg = gmail_client_not_available = None  # need thread_id
+                key = ("cleanup_done", thread_id)
+                if key in seen_jobs:
+                    continue
+                seen_jobs.add(key)
                 self.jobs.enqueue("cleanup", user_id, {"message_id": msg_id, "action": "done"})
                 result.label_changes += 1
                 result.jobs_queued += 1
 
             if rework_label and rework_label in added_labels:
-                # User marked Rework → queue rework
+                key = ("rework", thread_id)
+                if key in seen_jobs:
+                    continue
+                seen_jobs.add(key)
                 self.jobs.enqueue("rework", user_id, {"message_id": msg_id})
                 result.label_changes += 1
                 result.jobs_queued += 1
 
             if needs_response_label and needs_response_label in added_labels:
-                # User manually applied Needs Response → queue manual draft
+                key = ("manual_draft", thread_id)
+                if key in seen_jobs:
+                    continue
+                seen_jobs.add(key)
                 self.jobs.enqueue("manual_draft", user_id, {"message_id": msg_id})
                 result.label_changes += 1
                 result.jobs_queued += 1

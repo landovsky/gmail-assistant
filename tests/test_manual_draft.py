@@ -68,11 +68,11 @@ class TestSyncEngineNeedsResponseDetection:
 
         record = HistoryRecord(
             id="12345",
-            labels_added=[{"message_id": "msg_1", "label_ids": ["Label_NR"]}],
+            labels_added=[{"message_id": "msg_1", "thread_id": "thread_1", "label_ids": ["Label_NR"]}],
         )
 
         result = SyncResult()
-        engine._process_history_record(1, record, label_ids, result)
+        engine._process_history_record(1, record, label_ids, result, set())
 
         engine.jobs.enqueue.assert_called_once_with(
             "manual_draft", 1, {"message_id": "msg_1"}
@@ -94,11 +94,11 @@ class TestSyncEngineNeedsResponseDetection:
 
         record = HistoryRecord(
             id="12345",
-            labels_added=[{"message_id": "msg_1", "label_ids": ["Label_Done"]}],
+            labels_added=[{"message_id": "msg_1", "thread_id": "thread_1", "label_ids": ["Label_Done"]}],
         )
 
         result = SyncResult()
-        engine._process_history_record(1, record, label_ids, result)
+        engine._process_history_record(1, record, label_ids, result, set())
 
         # Should enqueue cleanup for done, not manual_draft
         engine.jobs.enqueue.assert_called_once_with(
@@ -120,12 +120,12 @@ class TestSyncEngineNeedsResponseDetection:
         record = HistoryRecord(
             id="12345",
             labels_added=[
-                {"message_id": "msg_1", "label_ids": ["Label_Done", "Label_NR"]},
+                {"message_id": "msg_1", "thread_id": "thread_1", "label_ids": ["Label_Done", "Label_NR"]},
             ],
         )
 
         result = SyncResult()
-        engine._process_history_record(1, record, label_ids, result)
+        engine._process_history_record(1, record, label_ids, result, set())
 
         assert engine.jobs.enqueue.call_count == 2
         assert result.label_changes == 2
@@ -143,11 +143,11 @@ class TestSyncEngineNeedsResponseDetection:
 
         record = HistoryRecord(
             id="12345",
-            labels_added=[{"message_id": "msg_1", "label_ids": ["Label_NR"]}],
+            labels_added=[{"message_id": "msg_1", "thread_id": "thread_1", "label_ids": ["Label_NR"]}],
         )
 
         result = SyncResult()
-        engine._process_history_record(1, record, label_ids, result)
+        engine._process_history_record(1, record, label_ids, result, set())
 
         engine.jobs.enqueue.assert_not_called()
 

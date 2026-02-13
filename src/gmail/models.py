@@ -153,12 +153,20 @@ class HistoryRecord:
         ]
 
         labels_added = [
-            {"message_id": item["message"]["id"], "label_ids": item.get("labelIds", [])}
+            {
+                "message_id": item["message"]["id"],
+                "thread_id": item["message"].get("threadId", ""),
+                "label_ids": item.get("labelIds", []),
+            }
             for item in data.get("labelsAdded", [])
         ]
 
         labels_removed = [
-            {"message_id": item["message"]["id"], "label_ids": item.get("labelIds", [])}
+            {
+                "message_id": item["message"]["id"],
+                "thread_id": item["message"].get("threadId", ""),
+                "label_ids": item.get("labelIds", []),
+            }
             for item in data.get("labelsRemoved", [])
         ]
 
