@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    ports:
+      - "${GMA_SERVER_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./logs:/app/logs
+    environment:
+      # Auth
+      - GMA_AUTH_MODE=${GMA_AUTH_MODE:-personal_oauth}
+      - GMA_AUTH_CREDENTIALS_FILE=/app/config/credentials.json
+      - GMA_AUTH_TOKEN_FILE=/app/config/token.json
+      # Database (SQLite by default)
+      - GMA_DB_BACKEND=${GMA_DB_BACKEND:-sqlite}
+      - GMA_DB_SQLITE_PATH=/app/data/inbox.db
+      # LLM
+      - GMA_LLM_CLASSIFY_MODEL=${GMA_LLM_CLASSIFY_MODEL:-claude-haiku-4-5-20251001}
+      - GMA_LLM_DRAFT_MODEL=${GMA_LLM_DRAFT_MODEL:-claude-sonnet-4-5-20250929}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Sync
+      - GMA_SYNC_PUBSUB_TOPIC=${GMA_SYNC_PUBSUB_TOPIC:-}
+      - GMA_SYNC_FALLBACK_INTERVAL_MINUTES=${GMA_SYNC_FALLBACK_INTERVAL_MINUTES:-15}
+      # Server
+      - GMA_SERVER_LOG_LEVEL=${GMA_SERVER_LOG_LEVEL:-info}
+    restart: unless-stopped
