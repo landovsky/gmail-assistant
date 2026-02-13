@@ -28,16 +28,16 @@ class TestBlacklistMatching:
         )
         assert result.matched is False
 
-    def test_empty_blacklist(self):
+    def test_empty_blacklist_normal_sender(self):
         result = classify_by_rules(
-            sender_email="bot@noreply.github.com",
-            subject="New PR",
-            snippet="",
+            sender_email="colleague@company.com",
+            subject="Hello",
+            snippet="Quick update",
             body="",
             blacklist=[],
         )
-        # No blacklist, so no match — falls through to content patterns
-        assert result.category != "fyi" or result.matched is False or result.confidence != "high"
+        # Normal sender with no blacklist — not matched by blacklist
+        assert result.reasoning != "Sender colleague@company.com matched blacklist"
 
 
 class TestAutomatedSender:
