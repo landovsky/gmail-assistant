@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 
 import litellm
@@ -11,6 +12,14 @@ import litellm
 from src.llm.config import LLMConfig
 
 logger = logging.getLogger(__name__)
+
+_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)```", re.DOTALL)
+
+
+def strip_code_fences(text: str) -> str:
+    """Strip markdown code fences (```json ... ```) that some models wrap around JSON."""
+    m = _FENCE_RE.search(text)
+    return m.group(1).strip() if m else text
 
 
 @dataclass
@@ -29,7 +38,7 @@ class ClassifyResult:
         On parse failure, defaults to needs_response (safer to over-triage
         than silently drop an email into FYI).
         """
-        content = response.choices[0].message.content.strip()
+        content = strip_code_fences(response.choices[0].message.content.strip())
         try:
             data = json.loads(content)
             category = data.get("category", "needs_response")

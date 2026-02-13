@@ -77,7 +77,9 @@ class ContextGatherer:
         raw = self.llm.generate_context_queries(CONTEXT_SYSTEM_PROMPT, user_message)
 
         try:
-            queries = json.loads(raw)
+            from src.llm.gateway import strip_code_fences
+
+            queries = json.loads(strip_code_fences(raw))
             if not isinstance(queries, list):
                 logger.warning("Context queries not a list: %s", raw[:200])
                 return []
