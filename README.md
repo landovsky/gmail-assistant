@@ -1,283 +1,379 @@
-# Gmail Assistant
+# Gmail Assistant v2
 
-A self-hosted, AI-powered email inbox manager built on [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Gmail MCP](https://www.npmjs.com/package/@gongrzhe/server-gmail-autoauth-mcp). It classifies incoming email, generates draft replies, and surfaces everything through Gmail labels you can act on from your phone.
+A self-hosted, AI-powered email inbox manager that classifies incoming email, generates draft replies, and surfaces everything through Gmail labels you can act on from your phone.
 
-The system never sends or deletes email. It only reads, labels, and creates drafts.
+**v2** replaces the Claude Code + MCP runtime with a Python application that talks directly to the Gmail API. Claude (or any LLM) is called only for classification and draft generation — everything else is fast, deterministic code.
 
-## Table of contents
+## What changed from v1
 
-- [Use cases](#use-cases)
-  - [Automatic inbox triage](#automatic-inbox-triage) — implemented
-  - [Review and send an AI draft](#review-and-send-an-ai-draft) — implemented
-  - [Revise a draft](#revise-a-draft) — implemented
-  - [Manually request a draft](#manually-request-a-draft) — implemented
-  - [Mark an email as done](#mark-an-email-as-done) — implemented
-  - [Detect payment requests](#detect-payment-requests) — implemented
-  - [Get a morning briefing](#get-a-morning-briefing) — planned
-  - [Customize communication style](#customize-communication-style) — implemented
-- [Setup](#setup)
-- [Configuration](#configuration)
-- [Commands reference](#commands-reference)
-- [Architecture](#architecture)
-- [Safety guarantees](#safety-guarantees)
+| | v1 | v2 |
+|---|---|---|
+| Gmail access | Gmail MCP (through Claude) | `google-api-python-client` direct |
+| Orchestration | Bash scripts + Claude Code | Python async application (FastAPI) |
+| LLM usage | Claude as runtime (does everything) | LLM called only for classify + draft |
+| Speed | 590s for 12 emails | ~15-30s for 12 emails |
+| Database | SQLite, single user | SQLite (default) or PostgreSQL |
+| Deployment | macOS CLI tool | Docker Compose, any server |
+| Models | Locked to Claude | Any model via LiteLLM (Claude, GPT, Gemini, local) |
 
-## Use cases
+**What stays the same:** the 8 Gmail labels, 5 classification categories, communication styles, rework loop, safety guarantees (never sends, never deletes).
 
-### Automatic inbox triage
-> **Status:** Implemented
+---
 
-Every 30 minutes (or on demand), the pipeline scans your inbox and classifies each email into one of five categories:
+## Quick start
 
-| Category | Label | Meaning |
-|----------|-------|---------|
-| Needs Response | `🤖 AI/Needs Response` | Someone is asking you a direct question or expects a reply |
-| Action Required | `🤖 AI/Action Required` | You need to do something outside email (sign, approve, attend) |
-| Payment Request | `🤖 AI/Payment Requests` | Contains a payment request or bill |
-| FYI | `🤖 AI/FYI` | Notification, newsletter, no action needed |
-| Waiting | `🤖 AI/Waiting` | You sent the last message, awaiting a reply |
+### Prerequisites
 
-When someone replies to a Waiting thread, the system detects the new message and re-triages it automatically.
+- Python 3.11+
+- A Google Cloud project with the Gmail API enabled
+- An LLM API key (Anthropic, OpenAI, or any LiteLLM-supported provider)
+
+### 1. Install
 
 ```bash
-bin/process-inbox triage    # run manually
-bin/process-inbox all       # full pipeline (triage + draft)
-```
-
-### Review and send an AI draft
-> **Status:** Implemented
-
-After triage, the pipeline automatically writes reply drafts for all `Needs Response` emails. Drafts appear in your Gmail drafts folder with the `🤖 AI/Outbox` label.
-
-1. Open a draft in Gmail (mobile or desktop)
-2. Review the AI-generated reply
-3. Edit if needed, then hit Send
-
-The system detects when a draft disappears from your drafts folder and marks it as sent.
-
-### Revise a draft
-> **Status:** Implemented
-
-When a draft isn't quite right:
-
-1. Open the draft in Gmail — you'll see a `✂️` marker separating instructions from content
-2. Type your feedback **above** the marker (e.g. "make it shorter", "more formal", "mention the Tuesday deadline")
-3. Apply the `🤖 AI/Rework` label
-4. Next run regenerates the draft incorporating your instructions
-
-Up to 3 reworks per thread, then it moves to Action Required for you to handle manually.
-
-```bash
-bin/rework    # process pending rework requests
-```
-
-### Manually request a draft
-> **Status:** Implemented
-
-For emails the system didn't auto-classify as needing a response, or when you want to provide specific instructions upfront:
-
-1. Open the email in Gmail and hit **Reply**
-2. Write your notes for the AI (e.g. "politely decline, suggest next month instead")
-3. Save the draft
-4. Apply the `🤖 AI/Needs Response` label to the thread
-
-The next pipeline run picks it up, reads your notes, and generates a full draft reply based on your instructions. The flow then continues as a normal [review](#review-and-send-an-ai-draft) or [rework](#revise-a-draft).
-
-### Mark an email as done
-> **Status:** Implemented
-
-When you've dealt with an email (sent a reply, completed the action, paid the invoice):
-
-1. Apply the `🤖 AI/Done` label in Gmail
-2. Next cleanup run archives the thread — removes it from Inbox and strips all AI labels except Done
-
-The `🤖 AI/Done` label is kept permanently as an audit trail marker.
-
-```bash
-bin/cleanup    # run cleanup manually
-```
-
-### Detect payment requests
-> **Status:** Implemented
-
-Emails containing payment requests, invoices, or billing statements are automatically detected during triage and labeled `🤖 AI/Payment Requests`. No further processing is done — the label surfaces them for your attention.
-
-### Get a morning briefing
-> **Status:** Planned
-
-Create a summary of your inbox state: action queue, pending drafts, payment requests, and waiting threads.
-
-### Customize communication style
-> **Status:** Implemented
-
-The system supports three built-in response styles — **formal**, **business** (default), and **informal**. Each has its own rules, sign-off, and example replies. Per-sender and per-domain overrides are configured in `config/contacts.yml`.
-
-To refine styles from your own 60-day sent email history:
-
-```bash
-claude -p /update-style
-```
-
-## Setup
-
-### 1. Clone and configure
-
-```bash
-git clone <repo-url> gmail-assistant
 cd gmail-assistant
+pip install -e .
+```
 
-# Create config files from examples
-cp config/label_ids.example.yml config/label_ids.yml
+### 2. Set up Google OAuth credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
+2. Create an **OAuth 2.0 Client ID** (Desktop application)
+3. Download the JSON and save it as:
+
+```
+config/credentials.json
+```
+
+### 3. Create config files
+
+```bash
+cp config/app.example.yml config/app.yml
 cp config/contacts.example.yml config/contacts.yml
 cp config/communication_styles.example.yml config/communication_styles.yml
 ```
 
-### 2. Set up Gmail OAuth
-
-Follow the [Gmail MCP docs](https://www.npmjs.com/package/@gongrzhe/server-gmail-autoauth-mcp) to create OAuth credentials. Place them at:
-
-```
-~/.gmail-mcp/gcp-oauth.keys.json   # OAuth client ID/secret from Google Cloud
-~/.gmail-mcp/credentials.json       # Generated on first auth (auto-created)
-```
-
-### 3. Create Gmail labels
-
-Create these nested labels in Gmail (Settings > Labels > Create new):
-
-```
-🤖 AI
-🤖 AI/Needs Response
-🤖 AI/Outbox
-🤖 AI/Rework
-🤖 AI/Action Required
-🤖 AI/Payment Requests
-🤖 AI/FYI
-🤖 AI/Waiting
-🤖 AI/Done
-```
-
-Then find each label's ID (run `claude -p "list all gmail labels"` with the MCP configured) and put them in `config/label_ids.yml`.
-
-### 4. Initialize the database
+### 4. Set your LLM API key
 
 ```bash
-sqlite3 data/inbox.db < data/schema.sql
+# For Claude (default):
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Or for OpenAI:
+# export OPENAI_API_KEY="sk-..."
+# Then edit config/app.yml to use gpt-4o-mini / gpt-4o
 ```
 
-### 5. Test it
+### 5. Start the server
 
 ```bash
-bin/process-inbox triage    # classify your inbox
-bin/process-inbox all       # full pipeline
+python -m uvicorn src.main:app --host 0.0.0.0 --port 8000
 ```
 
-### 6. (Optional) Automate with launchd
+On first run, a browser window opens for Google OAuth consent. After authorizing, the token is saved to `config/token.json` for future runs.
+
+The server:
+- Initializes the SQLite database (`data/inbox.db`) automatically
+- Starts background workers that process jobs from the queue
+- Listens for Gmail Pub/Sub webhook notifications (if configured)
+- Exposes REST API endpoints
+
+### 6. Onboard yourself
+
+The first time, you need to create your user and provision Gmail labels. Use the API or a Python shell:
+
+```python
+from src.config import AppConfig
+from src.db.connection import init_db
+from src.gmail.client import GmailService
+from src.users.onboarding import OnboardingService
+
+config = AppConfig.from_yaml()
+db = init_db(config)
+gmail = GmailService(config)
+client = gmail.for_user()  # uses your personal OAuth
+
+onboarding = OnboardingService(db)
+user_id = onboarding.onboard_user("you@gmail.com", client, display_name="Your Name")
+```
+
+This creates the 9 Gmail labels (`🤖 AI/*`), stores their IDs in the database, and imports your config files as user settings.
+
+**Migrating from v1?** If you already have the labels and `config/label_ids.yml`:
+
+```python
+user_id = onboarding.onboard_from_existing_config("you@gmail.com", client)
+```
+
+---
+
+## Docker deployment
 
 ```bash
-# Edit the plist to match your paths
-cp config/com.gmail-assistant.process-inbox.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.gmail-assistant.process-inbox.plist
+# Set your API key
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+
+# Build and start
+docker compose up -d
 ```
 
-Runs the pipeline every 30 minutes. Logs go to `logs/`.
+The container mounts `./data`, `./config`, and `./logs` as volumes, so your database and config persist across restarts.
 
-### Prerequisites
+To customize models or port:
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) with an Anthropic API key
-- A Google Cloud project with Gmail API enabled and OAuth credentials
-- Node.js (for npx / Gmail MCP server)
-- SQLite3 (pre-installed on macOS)
-- macOS recommended (uses launchd for scheduling; adaptable to cron/systemd)
+```bash
+GMA_LLM_CLASSIFY_MODEL=gpt-4o-mini \
+GMA_LLM_DRAFT_MODEL=gpt-4o \
+GMA_SERVER_PORT=9000 \
+docker compose up -d
+```
+
+---
 
 ## Configuration
 
-### `config/label_ids.yml`
+All configuration lives in `config/app.yml` (see `config/app.example.yml`). Every setting can also be overridden with environment variables prefixed `GMA_`.
 
-Maps label names to Gmail label IDs. Required for the system to apply and read labels.
+### `config/app.yml`
+
+```yaml
+auth:
+  mode: personal_oauth        # or "service_account" for multi-user
+  credentials_file: config/credentials.json
+  token_file: config/token.json
+
+database:
+  backend: sqlite              # or "postgresql"
+  sqlite_path: data/inbox.db
+
+llm:
+  classify_model: "claude-haiku-4-5-20251001"    # fast, cheap
+  draft_model: "claude-sonnet-4-5-20250929"      # high quality
+
+sync:
+  fallback_interval_minutes: 15
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  log_level: info
+```
+
+### Switching LLM providers
+
+Change the model names in `config/app.yml` to any [LiteLLM-supported model](https://docs.litellm.ai/docs/providers):
+
+```yaml
+llm:
+  # OpenAI
+  classify_model: "gpt-4o-mini"
+  draft_model: "gpt-4o"
+
+  # Google
+  # classify_model: "gemini/gemini-2.0-flash"
+  # draft_model: "gemini/gemini-2.0-pro"
+
+  # Local (Ollama)
+  # classify_model: "ollama/llama3"
+  # draft_model: "ollama/llama3"
+```
+
+Set the corresponding API key as an environment variable (`OPENAI_API_KEY`, `GEMINI_API_KEY`, etc.).
 
 ### `config/contacts.yml`
 
-Per-sender overrides for communication style, language, and a blacklist:
+Per-sender overrides for communication style, language, and a blacklist of senders that are always classified as FYI:
 
 ```yaml
 style_overrides:
-  "vip-client@company.com": formal
+  "vip@company.com": formal
 
 domain_overrides:
   "*.gov.cz": formal
 
-language_overrides:
-  "english-speaker@abroad.com": en
-
-blacklist:   # Always classified as FYI, never drafted
+blacklist:
   - "*@noreply.github.com"
+  - "*@notifications.google.com"
 ```
 
 ### `config/communication_styles.yml`
 
-Defines three response styles — **formal**, **business** (default), **informal** — each with rules, sign-off, and examples.
+Three response styles — **formal**, **business** (default), **informal** — each with rules, sign-off, and example replies. See `config/communication_styles.example.yml`.
 
-## Commands reference
+---
 
-| Command | Script | Purpose |
-|---------|--------|---------|
-| `/inbox-triage` | `bin/process-inbox triage` | Classify new emails |
-| `/draft-response` | `bin/process-inbox draft` | Generate reply drafts |
-| `/cleanup` | `bin/cleanup` | Archive Done threads, detect sent drafts |
-| `/rework-draft` | `bin/rework` | Process draft feedback |
-| `/morning-briefing` | — | Generate HTML dashboard summary |
-| `/update-style` | — | Learn communication patterns from sent mail |
+## API reference
 
-### Logging
+The server exposes a REST API at `http://localhost:8000`. Interactive docs at `/docs` (Swagger UI).
 
-All scripts log to both stdout and `logs/<script-name>.log`. Set log verbosity with:
+### Health
+
+```
+GET /api/health
+```
+
+### Webhook (Gmail Pub/Sub)
+
+```
+POST /webhook/gmail
+```
+
+Receives push notifications from Google Pub/Sub when a mailbox changes. Automatically queues sync jobs.
+
+### Users
+
+```
+GET  /api/users                          # List active users
+POST /api/users                          # Create user {"email": "...", "display_name": "..."}
+GET  /api/users/{id}/settings            # Get user settings
+PUT  /api/users/{id}/settings            # Update setting {"key": "...", "value": ...}
+GET  /api/users/{id}/labels              # Get label ID mappings
+GET  /api/users/{id}/emails              # List emails (?status=pending&classification=needs_response)
+```
+
+### Briefing
+
+```
+GET /api/briefing/{email}                # Inbox summary for a user
+```
+
+Returns classification counts, active items per category, and pending draft count.
+
+---
+
+## How it works
+
+### Processing pipeline
+
+```
+New email arrives
+  │
+  ▼
+Sync engine: history.list()              ← ~200ms (1 API call)
+  │
+  ▼
+For each new message (parallel):
+  ├─ Rule-based classify                 ← ~1ms   (local, no API)
+  ├─ LLM classify (if ambiguous)         ← ~500ms (1 API call)
+  ├─ Apply Gmail label                   ← ~100ms (1 API call)
+  └─ Store in DB                         ← ~5ms   (local)
+  │
+  ▼
+For needs_response emails (parallel):
+  ├─ Generate draft (LLM)               ← ~3-5s  (1 API call)
+  ├─ Create Gmail draft                  ← ~100ms (1 API call)
+  └─ Move label: Needs Response → Outbox ← ~100ms (1 API call)
+```
+
+### Two-tier classification
+
+1. **Rules** (instant, free): blacklist matching, automated sender detection, payment/action/FYI keyword patterns
+2. **LLM** (via gateway): called only when rules are not confident enough — nuanced classification with structured JSON output
+
+### Label lifecycle
+
+Same as v1 — the 8 labels and their transitions are unchanged:
+
+- `Needs Response` → draft created → `Outbox` → user sends → detected → `sent`
+- `Outbox` → user adds feedback + `Rework` label → regenerate → `Outbox` (max 3 reworks)
+- Any label + `Done` → cleanup archives thread, strips labels, keeps Done
+
+### Job queue
+
+Jobs (sync, classify, draft, cleanup, rework) are stored in a `jobs` table and processed by async workers. In SQLite mode this is a simple polling loop; PostgreSQL mode uses `SKIP LOCKED` for concurrent processing.
+
+---
+
+## Project structure
+
+```
+src/
+├── main.py                    # FastAPI app entry point
+├── config.py                  # Configuration (env vars + YAML)
+│
+├── gmail/
+│   ├── auth.py                # Personal OAuth + service account
+│   ├── client.py              # GmailService + UserGmailClient
+│   └── models.py              # Message, Thread, Draft dataclasses
+│
+├── llm/
+│   ├── gateway.py             # LLMGateway (LiteLLM-backed)
+│   └── config.py              # Model selection
+│
+├── classify/
+│   ├── engine.py              # Two-tier classification engine
+│   ├── rules.py               # Rule-based pre-classifier
+│   └── prompts.py             # LLM prompt templates
+│
+├── draft/
+│   ├── engine.py              # Draft generation + rework
+│   └── prompts.py             # Draft prompt templates
+│
+├── lifecycle/
+│   └── manager.py             # Done/Sent/Waiting/Rework handlers
+│
+├── sync/
+│   ├── engine.py              # Incremental sync (history.list)
+│   ├── webhook.py             # Pub/Sub notification handler
+│   └── watch.py               # Watch renewal scheduler
+│
+├── users/
+│   ├── onboarding.py          # Label provisioning, settings init
+│   └── settings.py            # Per-user config management
+│
+├── db/
+│   ├── connection.py          # SQLite / PostgreSQL connection
+│   ├── models.py              # Repository classes
+│   └── migrations/
+│       └── 001_v2_schema.sql  # Database schema
+│
+├── api/
+│   ├── webhook.py             # POST /webhook/gmail
+│   ├── admin.py               # User management endpoints
+│   └── briefing.py            # Inbox summary endpoint
+│
+└── tasks/
+    └── workers.py             # Async job workers
+```
+
+---
+
+## Running tests
 
 ```bash
-GMA_LOG_LEVEL=debug bin/process-inbox all    # debug, info (default), warn, error
+pip install -e ".[dev]"
+pytest tests/ -v
 ```
 
-## Architecture
+49 tests covering: rule-based classification, prompt building, database repositories, Gmail model parsing, rework marker logic.
 
-```
-┌──────────────────────────────────────────────────────┐
-│                 Background Processor                  │
-│             (Claude Code custom commands)             │
-│                                                      │
-│  ┌──────────────────┐  ┌────────────────────────┐   │
-│  │  Triage           │→│   Draft Responses       │   │
-│  │  (Haiku)          │ │   (Sonnet)              │   │
-│  └──────────────────┘  └────────────────────────┘   │
-│       │                       │                      │
-│       ▼                       ▼                      │
-│  ┌──────────────────────────────────────────────────┐│
-│  │             Local SQLite Database                 ││
-│  └──────────────────────────────────────────────────┘│
-│       │              │                               │
-│       ▼              ▼                               │
-│  ┌──────────┐  ┌────────────┐                       │
-│  │  Gmail    │  │   Gmail     │                       │
-│  │  Labels   │  │   Drafts    │                       │
-│  └──────────┘  └────────────┘                       │
-└──────────────────────────────────────────────────────┘
-        │                │
-        ▼                ▼
-  ┌──────────┐    ┌──────────────┐
-  │  Mobile   │    │   Desktop    │
-  │  Gmail    │    │  Dashboard   │
-  │ (labels)  │    │  (HTML file) │
-  └──────────┘    └──────────────┘
-```
+---
 
-Every action is logged to an `email_events` audit table. The `🤖 AI/Done` label is kept permanently as a processing marker and never removed.
+## Environment variables
+
+All settings can be overridden via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GMA_AUTH_MODE` | `personal_oauth` | `personal_oauth` or `service_account` |
+| `GMA_DB_BACKEND` | `sqlite` | `sqlite` or `postgresql` |
+| `GMA_DB_SQLITE_PATH` | `data/inbox.db` | SQLite database path |
+| `GMA_LLM_CLASSIFY_MODEL` | `claude-haiku-4-5-20251001` | Classification model |
+| `GMA_LLM_DRAFT_MODEL` | `claude-sonnet-4-5-20250929` | Draft generation model |
+| `GMA_SYNC_PUBSUB_TOPIC` | _(empty)_ | Pub/Sub topic for push notifications |
+| `GMA_SYNC_FALLBACK_INTERVAL_MINUTES` | `15` | Polling interval when push is not available |
+| `GMA_SERVER_HOST` | `0.0.0.0` | Server bind address |
+| `GMA_SERVER_PORT` | `8000` | Server port |
+| `GMA_SERVER_LOG_LEVEL` | `info` | Log level (`debug`, `info`, `warning`, `error`) |
+| `ANTHROPIC_API_KEY` | — | Required for Claude models |
+
+---
 
 ## Safety guarantees
+
+Same as v1:
 
 - **Never sends email** — only creates drafts for you to review and send
 - **Never deletes email** — only labels and archives (removes from inbox)
 - **Old drafts go to Trash** (recoverable 30 days), never permanently deleted
-- **Full audit trail** in `email_events` table — every classification, draft, label change logged
-- **Tool allowlisting** — each pipeline step runs with minimum required permissions
-
-## License
-
-MIT
+- **Full audit trail** — every classification, draft, and label change logged to `email_events`
