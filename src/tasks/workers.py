@@ -263,6 +263,9 @@ class WorkerPool:
             related_context=related_context,
         )
 
+        # Trash any stale drafts from previous attempts
+        await asyncio.to_thread(gmail_client.trash_thread_drafts, thread_id)
+
         # Create Gmail draft
         latest = thread.latest_message
         draft_id = await asyncio.to_thread(
@@ -445,9 +448,8 @@ class WorkerPool:
             related_context=related_context,
         )
 
-        # Trash user's notes draft (if it exists)
-        if user_draft:
-            await asyncio.to_thread(gmail_client.trash_draft, user_draft.id)
+        # Trash user's notes draft and any stale AI drafts from previous attempts
+        await asyncio.to_thread(gmail_client.trash_thread_drafts, thread_id)
 
         # Create the AI draft
         latest = thread.latest_message

@@ -270,8 +270,8 @@ class TestHandleManualDraft:
         call_kwargs = pool.draft_engine.generate_draft.call_args[1]
         assert call_kwargs["user_instructions"] == "politely decline, suggest next month"
 
-        # Should trash user's notes draft
-        gmail_client.trash_draft.assert_called_once_with("draft_1")
+        # Should trash all existing drafts in the thread
+        gmail_client.trash_thread_drafts.assert_called_once_with("thread_1")
 
         # Should create AI draft
         gmail_client.create_draft.assert_called_once()
@@ -344,8 +344,8 @@ class TestHandleManualDraft:
         call_kwargs = pool.draft_engine.generate_draft.call_args[1]
         assert call_kwargs["user_instructions"] is None
 
-        # Should not trash any draft (none existed)
-        gmail_client.trash_draft.assert_not_called()
+        # Should still trash thread drafts (cleans up stale AI drafts)
+        gmail_client.trash_thread_drafts.assert_called_once_with("thread_1")
 
     @pytest.mark.asyncio
     async def test_manual_draft_skips_already_drafted(self):

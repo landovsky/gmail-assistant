@@ -224,6 +224,16 @@ class UserGmailClient:
                 return self.get_draft(draft.id)
         return None
 
+    def trash_thread_drafts(self, thread_id: str) -> int:
+        """Trash all drafts belonging to a thread. Returns count trashed."""
+        drafts = self.list_drafts()
+        count = 0
+        for draft in drafts:
+            if draft.thread_id == thread_id:
+                if self.trash_draft(draft.id):
+                    count += 1
+        return count
+
     def list_history(
         self,
         start_history_id: str,
