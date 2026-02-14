@@ -76,6 +76,8 @@ class ServerConfig(BaseSettings):
     webhook_secret: str = ""
     log_level: str = "info"
     worker_concurrency: int = 3
+    admin_user: str = ""
+    admin_password: str = ""
 
     model_config = {"env_prefix": "GMA_SERVER_"}
 

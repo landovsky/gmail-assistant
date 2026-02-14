@@ -20,6 +20,8 @@ import httpx
 import pytest
 
 BASE_URL = os.environ.get("GMA_SMOKE_BASE_URL", "http://0.0.0.0:8000")
+ADMIN_USER = os.environ.get("GMA_SERVER_ADMIN_USER", "")
+ADMIN_PASSWORD = os.environ.get("GMA_SERVER_ADMIN_PASSWORD", "")
 
 # Admin model URL slugs — must match SQLAdmin's generated routes
 ADMIN_MODELS = [
@@ -39,7 +41,8 @@ pytestmark = pytest.mark.smoke
 @pytest.fixture(scope="session")
 def client():
     """Shared HTTP client for the test session."""
-    with httpx.Client(base_url=BASE_URL, timeout=15, follow_redirects=True) as c:
+    auth = (ADMIN_USER, ADMIN_PASSWORD) if ADMIN_USER and ADMIN_PASSWORD else None
+    with httpx.Client(base_url=BASE_URL, timeout=15, follow_redirects=True, auth=auth) as c:
         # Fail fast if server isn't running
         try:
             resp = c.get("/api/health")
