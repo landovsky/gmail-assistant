@@ -18,7 +18,7 @@ from src.admin.views import (
 )
 
 
-def setup_admin(app: FastAPI, sqlite_path: str) -> Admin:
+def setup_admin(app: FastAPI, sqlite_path: str, *, debug: bool = False) -> Admin:
     """Set up and mount the admin interface.
 
     Creates a read-only SQLAlchemy engine (WAL mode supports concurrent
@@ -27,6 +27,7 @@ def setup_admin(app: FastAPI, sqlite_path: str) -> Admin:
     Args:
         app: FastAPI application instance
         sqlite_path: Path to SQLite database file
+        debug: Show full tracebacks on errors (development only)
 
     Returns:
         Admin instance (for testing purposes)
@@ -45,6 +46,7 @@ def setup_admin(app: FastAPI, sqlite_path: str) -> Admin:
         engine,
         title="Gmail Assistant Admin",
         base_url="/admin",
+        debug=debug,
     )
 
     # Register all views

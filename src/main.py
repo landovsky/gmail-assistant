@@ -135,11 +135,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
+    is_dev = config.environment == "development"
+
     app = FastAPI(
         title="Gmail Assistant v2",
         version="2.0.0",
         description="AI-powered Gmail inbox management",
         lifespan=lifespan,
+        debug=is_dev,
     )
 
     # Initialize database
@@ -153,7 +156,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(briefing_router)
 
     # Mount admin UI
-    setup_admin(app, str(config.database.sqlite_path))
+    setup_admin(app, str(config.database.sqlite_path), debug=is_dev)
 
     return app
 
