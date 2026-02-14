@@ -518,7 +518,7 @@ def _render_email_list(
     <input id="q" type="text" placeholder="Search subject, body, sender, thread ID…"
            value="{_e(q or "")}">
     <select id="status-filter">
-      <option value="">All statuses</option>
+      <option value="">All draft statuses</option>
       {
         "".join(
             f'<option value="{s}"{" selected" if status == s else ""}>{s}</option>'
@@ -542,7 +542,7 @@ def _render_email_list(
     <table>
       <thead><tr>
         <th>ID</th><th>User</th><th>Subject</th><th>Sender</th>
-        <th>Classification</th><th>Status</th><th>Confidence</th>
+        <th>Classification</th><th>Draft Status</th><th>Confidence</th>
         <th>Events</th><th>LLM</th><th>Received</th>
       </tr></thead>
       <tbody>{rows}</tbody>

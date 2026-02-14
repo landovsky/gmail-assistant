@@ -218,7 +218,7 @@ class WorkerPool:
             f"{result.category} ({result.confidence}, source={result.source})",
         )
 
-        # Queue draft if needs_response
+        # Queue draft if needs_response, otherwise mark as skipped
         if result.category == "needs_response":
             await asyncio.to_thread(
                 self.jobs.enqueue,
@@ -228,6 +228,10 @@ class WorkerPool:
                     "thread_id": msg.thread_id,
                     "message_id": msg.id,
                 },
+            )
+        else:
+            await asyncio.to_thread(
+                self.emails.update_status, job.user_id, msg.thread_id, "skipped"
             )
 
         logger.info(
