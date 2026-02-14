@@ -1,24 +1,59 @@
 #!/usr/bin/env bash
 # Trigger a full sync — classifies all untagged inbox emails.
-# Requires the dev server to be running (bin/dev).
 #
-# Usage: bin/full-sync [--reset]
+# Usage: bin/full-sync [--env=production|dev] [--reset]
+#   --env    Target environment (default: dev)
 #   --reset  Also clear jobs, emails, and events (full wipe)
 
 set -euo pipefail
-BASE="http://localhost:8000/api"
 
-if ! curl -s --fail "$BASE/health" > /dev/null 2>&1; then
-  echo "Error: dev server not running. Start it with: bin/dev"
+ENV="dev"
+RESET=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --env=*) ENV="${arg#--env=}" ;;
+    --reset) RESET=true ;;
+    *) echo "Usage: bin/full-sync [--env=production|dev] [--reset]"; exit 1 ;;
+  esac
+done
+
+case "$ENV" in
+  dev)
+    BASE="http://localhost:8000/api"
+    AUTH_FLAG=()
+    ;;
+  production)
+    BASE="https://gmail.kopernici.cz/api"
+    : "${GMA_SERVER_ADMIN_USER:?Set GMA_SERVER_ADMIN_USER in your environment}"
+    : "${GMA_SERVER_ADMIN_PASSWORD:?Set GMA_SERVER_ADMIN_PASSWORD in your environment}"
+    AUTH_FLAG=(-u "$GMA_SERVER_ADMIN_USER:$GMA_SERVER_ADMIN_PASSWORD")
+    ;;
+  *)
+    echo "Unknown environment: $ENV (use dev or production)"
+    exit 1
+    ;;
+esac
+
+if ! curl -s --fail "${AUTH_FLAG[@]}" "$BASE/health" > /dev/null 2>&1; then
+  echo "Error: $ENV server not reachable at $BASE"
   exit 1
 fi
 
-if [[ "${1:-}" == "--reset" ]]; then
+if $RESET; then
+  if [ "$ENV" = "production" ]; then
+    echo "⚠️  You are about to wipe the PRODUCTION database."
+    read -r -p "Type 'yes' to confirm: " confirm
+    if [ "$confirm" != "yes" ]; then
+      echo "Aborted."
+      exit 1
+    fi
+  fi
   echo "Resetting database..."
-  curl -s -X POST "$BASE/reset" | python3 -m json.tool
+  curl -s "${AUTH_FLAG[@]}" -X POST "$BASE/reset" | python3 -m json.tool
   echo
 fi
 
-echo "Triggering full sync..."
-curl -s -X POST "$BASE/sync?user_id=1&full=true" | python3 -m json.tool
+echo "Triggering full sync ($ENV)..."
+curl -s "${AUTH_FLAG[@]}" -X POST "$BASE/sync?user_id=1&full=true" | python3 -m json.tool
 echo "Watch server logs for progress."
