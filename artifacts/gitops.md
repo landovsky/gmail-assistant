@@ -15,9 +15,9 @@
 
 | Environment | Trigger | URL |
 |------------|---------|-----|
-| **Production** | Push to `main` branch | `https://gmail.kopernici.cz` |
+| **Production** | Push to `production` branch | `https://gmail.kopernici.cz` |
 
-Single environment. No staging.
+Single environment. No staging. Development happens on `main`, deploy by merging to `production`.
 
 ## Deployment
 
@@ -118,9 +118,9 @@ kubectl create secret generic gmail-assistant-config \
 - Uses GitHub Actions cache (gha)
 
 **Deployment Flow:**
-1. Develop on feature branches
-2. Push triggers CI tests
-3. Merge to `main` → CI + Docker build + push to ghcr.io
+1. Develop on feature branches, merge to `main`
+2. Push triggers CI tests (lint + pytest)
+3. Merge `main` → `production` → Docker build + push to ghcr.io
 4. Flux detects new image → auto-deploys to cluster
 
 ## Configuration
