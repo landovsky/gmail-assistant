@@ -1,7 +1,5 @@
 """Tests for classification prompts and engine wiring."""
 
-import pytest
-
 from src.classify.prompts import (
     CLASSIFY_SYSTEM_PROMPT,
     build_classify_system_prompt,

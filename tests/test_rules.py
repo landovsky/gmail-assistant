@@ -3,8 +3,6 @@
 CR-01: Rules only detect automation. Content pattern tests removed.
 """
 
-import pytest
-
 from src.classify.rules import classify_by_rules, resolve_communication_style
 
 

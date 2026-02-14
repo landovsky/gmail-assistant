@@ -1,7 +1,5 @@
 """Tests for lifecycle manager and draft prompts."""
 
-import pytest
-
 from src.draft.prompts import (
     build_rework_user_message,
     extract_rework_instruction,

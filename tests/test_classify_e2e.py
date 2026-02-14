@@ -8,8 +8,6 @@ automated emails and passes everything else to the LLM.
 
 from __future__ import annotations
 
-import pytest
-
 from src.classify.rules import classify_by_rules
 
 

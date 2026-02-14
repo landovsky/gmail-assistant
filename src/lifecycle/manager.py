@@ -7,7 +7,6 @@ deterministic Python code. These operations need zero LLM intelligence.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from src.context.gatherer import ContextGatherer
 from src.db.models import EmailRepository, EventRepository, LabelRepository
@@ -188,7 +187,6 @@ class LifecycleManager:
         if not thread or not thread.latest_message:
             return False
 
-        latest = thread.latest_message
         thread_body = "\n---\n".join(m.body[:1000] for m in thread.messages)
 
         # CR-03: Gather related context (same as initial draft flow)

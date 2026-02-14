@@ -7,11 +7,9 @@ Also tests the ClassifyResult parser for robustness, including resolved_style.
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
-
-from src.classify.engine import Classification, ClassificationEngine
+from src.classify.engine import ClassificationEngine
 from src.llm.gateway import ClassifyResult, LLMGateway
 
 
