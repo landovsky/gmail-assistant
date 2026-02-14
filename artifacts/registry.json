@@ -33,5 +33,10 @@
     "filename": "artifacts/session-gotchas.md",
     "description": "Lessons learned from 4 major dev sessions: Gmail API gotchas, async pitfalls, shell issues, architecture mistakes, performance measurement, UX corrections, and identified test gaps",
     "usage": "always"
+  },
+  {
+    "filename": "artifacts/gitops.md",
+    "description": "GitOps deployment setup: K3s cluster on DigitalOcean, Flux CD, GitHub Actions Docker build to ghcr.io, Kubernetes resources, secrets management, environment variables, monitoring, and useful kubectl/flux commands",
+    "usage": "decide"
   }
 ]
