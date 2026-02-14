@@ -46,8 +46,7 @@ def client():
             resp.raise_for_status()
         except (httpx.ConnectError, httpx.ConnectTimeout):
             pytest.skip(
-                f"Dev server not running at {BASE_URL} — "
-                "start with: uvicorn src.main:app --reload"
+                f"Dev server not running at {BASE_URL} — start with: uvicorn src.main:app --reload"
             )
         yield c
 
@@ -71,8 +70,7 @@ class TestAdminListPages:
         url = f"/admin/{model_slug}/list"
         resp = client.get(url)
         assert resp.status_code == 200, (
-            f"GET {url} returned {resp.status_code}\n"
-            f"Body (first 500 chars): {resp.text[:500]}"
+            f"GET {url} returned {resp.status_code}\nBody (first 500 chars): {resp.text[:500]}"
         )
 
 
@@ -109,9 +107,67 @@ class TestAdminDashboard:
     def test_dashboard_contains_all_nav_links(self, client: httpx.Client):
         resp = client.get("/admin/")
         for slug in ADMIN_MODELS:
-            assert f"/admin/{slug}/list" in resp.text, (
-                f"Nav link for {slug} missing from dashboard"
-            )
+            assert f"/admin/{slug}/list" in resp.text, f"Nav link for {slug} missing from dashboard"
+
+
+class TestDebugPages:
+    """Debug UI and API endpoints should return 200."""
+
+    def test_debug_email_list_html(self, client: httpx.Client):
+        resp = client.get("/debug/emails")
+        assert resp.status_code == 200, f"GET /debug/emails returned {resp.status_code}"
+
+    def test_debug_email_list_api(self, client: httpx.Client):
+        resp = client.get("/api/debug/emails")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "emails" in data
+        assert "count" in data
+        assert "filters" in data
+
+    def test_debug_email_list_api_with_filters(self, client: httpx.Client):
+        resp = client.get("/api/debug/emails?status=pending&limit=5")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["limit"] == 5
+        assert data["filters"]["status"] == "pending"
+
+    def test_debug_email_detail_html(self, client: httpx.Client):
+        # Get an email ID from the list API
+        list_resp = client.get("/api/debug/emails?limit=1")
+        emails = list_resp.json().get("emails", [])
+        if not emails:
+            pytest.skip("No emails in database")
+        email_id = emails[0]["id"]
+
+        resp = client.get(f"/debug/email/{email_id}")
+        assert resp.status_code == 200, f"GET /debug/email/{email_id} returned {resp.status_code}"
+
+    def test_debug_email_detail_api(self, client: httpx.Client):
+        list_resp = client.get("/api/debug/emails?limit=1")
+        emails = list_resp.json().get("emails", [])
+        if not emails:
+            pytest.skip("No emails in database")
+        email_id = emails[0]["id"]
+
+        resp = client.get(f"/api/emails/{email_id}/debug")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "email" in data
+        assert "events" in data
+        assert "llm_calls" in data
+        assert "agent_runs" in data
+        assert "timeline" in data
+        assert "summary" in data
+        # Verify summary structure
+        summary = data["summary"]
+        assert "total_tokens" in summary
+        assert "error_count" in summary
+        assert "llm_breakdown" in summary
+
+    def test_debug_email_not_found(self, client: httpx.Client):
+        resp = client.get("/api/emails/999999/debug")
+        assert resp.status_code == 404
 
 
 class TestNoServerErrors:

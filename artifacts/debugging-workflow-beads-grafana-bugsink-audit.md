@@ -45,6 +45,40 @@ WHERE user_id = 1 AND event_type = 'classified'
 ORDER BY created_at DESC;
 ```
 
+### Debug API (JSON — for AI/programmatic debugging)
+
+The debug API provides structured JSON access to all email-related data, designed for AI-assisted and programmatic debugging.
+
+```bash
+# List emails with search/filter — returns event/LLM/agent counts per email
+curl "http://localhost:8000/api/debug/emails?q=invoice&status=pending&limit=20"
+
+# Full debug dump for a specific email — includes timeline and summary
+curl "http://localhost:8000/api/emails/42/debug"
+```
+
+**`GET /api/debug/emails`** query params: `?status=`, `?classification=`, `?q=` (full-text), `?limit=` (1–500)
+
+**`GET /api/emails/{id}/debug`** response structure:
+- `email` — full email record (all columns)
+- `events` — audit events for the thread (chronological)
+- `llm_calls` — all LLM API calls with full prompts, responses, token counts
+- `agent_runs` — agent execution logs with tool call history
+- `timeline` — merged chronological view of all three data sources
+- `summary` — pre-computed: total tokens, total latency, error count, LLM breakdown by call type
+
+**Typical AI debugging workflow:**
+1. `GET /api/debug/emails?q=<search>` to find the email
+2. `GET /api/emails/{id}/debug` to get the full debug dump
+3. Inspect `summary.errors` for quick error overview
+4. Walk `timeline` for chronological processing sequence
+5. Drill into `llm_calls[].system_prompt` / `user_message` / `response_text` for LLM decision inspection
+
+### Debug UI (HTML)
+
+Browser-based debug views at `/debug/emails` (list) and `/debug/email/{id}` (detail).
+The email list in SQLAdmin (`/admin`) also links to debug pages via the ID column.
+
 ### BugSink Error Tracking CLI
 
 **Note:** Issues and Events are READ-ONLY via the API. Write operations (marking as resolved) must be done manually in the web UI.
@@ -158,8 +192,9 @@ Use common sense and best practices.
 Common methodology (override if justifiable):
 
 - Fetch Error Details
+- Use Debug API (`/api/emails/{id}/debug`) to get full context for an email — this is the fastest way to see the complete processing history, LLM decisions, and errors in one place
 - Check application logs (local or Grafana)
-- Query email_events audit table for affected threads
+- Query email_events audit table for affected threads (or use Debug API timeline)
 - Analyze Stacktrace
 - Identify Root Cause
 - Create Beads Issue
