@@ -173,7 +173,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.get("/")
     async def root():
-        return RedirectResponse(url="/admin/")
+        return RedirectResponse(url="/admin/email-model/list")
 
     return app
 
