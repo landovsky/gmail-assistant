@@ -173,10 +173,15 @@ Before generating a draft, the system optionally searches the user's mailbox for
 
 ### Process
 
+> **`[CHANGE REQUEST: CR-05]` Context gathering must include message bodies, not just metadata.** After finding related threads, the system must fetch the full thread content (all messages) for each result, not just metadata. This provides the LLM with actual conversation history for drafting, not just subject lines and snippets.
+>
+> **Warning:** This means related thread messages are fetched in full. If a related thread contains forwarded emails or deeply nested replies, the embedded content may be large. Implementations should truncate each thread's combined body to a reasonable limit (e.g., 2000 characters per thread) to prevent prompt bloat.
+
 1. **Generate search queries:** Send the email's sender, subject, and body to the LLM (using the configurable context model — defaults to the fast/cheap model, overridable via `llm.context_model`), which returns up to 3 Gmail search queries as a JSON array.
-2. **Execute searches:** Run each query against Gmail's search API (metadata-only fetch — no message bodies, only sender, subject, snippet per result).
+2. **Execute searches:** Run each query against Gmail's search API to find matching threads.
 3. **Deduplicate:** Remove results from the current thread, deduplicate by thread_id.
-4. **Cap results:** Maximum 5 related threads (not thread messages — each result is one thread with its metadata only).
+4. **Cap results:** Maximum 5 related threads.
+5. **Fetch full content:** For each related thread, fetch the full thread with all messages. Extract sender, subject, and message bodies (truncated per thread to prevent excessive prompt size).
 
 ### Output Format
 
@@ -185,7 +190,7 @@ Related context is formatted as a text block injected into the draft prompt:
 ```
 --- Related emails from your mailbox ---
 1. From: Name <email> | Subject: Subject line
-   Snippet preview text...
+   {message body, truncated}
 2. From: ...
 --- End related emails ---
 ```
