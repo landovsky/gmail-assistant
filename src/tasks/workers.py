@@ -154,6 +154,7 @@ class WorkerPool:
 
     async def _handle_classify(self, job: Any, gmail_client: UserGmailClient) -> None:
         message_id = job.payload.get("message_id")
+        force = job.payload.get("force", False)
 
         if not message_id:
             return
@@ -163,10 +164,11 @@ class WorkerPool:
         if not msg:
             return
 
-        # Check if already classified
+        # Check if already classified (skip when force-reclassifying)
         existing = await asyncio.to_thread(self.emails.get_by_thread, job.user_id, msg.thread_id)
-        if existing:
+        if existing and not force:
             return
+        old_classification = existing["classification"] if existing else None
 
         # Get user settings
         settings = await asyncio.to_thread(UserSettings, self.db, job.user_id)
@@ -189,11 +191,24 @@ class WorkerPool:
             gmail_thread_id=msg.thread_id,
         )
 
-        # Apply Gmail label
+        # Apply Gmail label (swap old label on reclassification)
         label_ids = await asyncio.to_thread(self.labels_repo.get_labels, job.user_id)
         label_id = label_ids.get(result.category)
         if label_id:
-            await asyncio.to_thread(gmail_client.modify_labels, message_id, add=[label_id])
+            remove_labels = []
+            if force and old_classification and old_classification != result.category:
+                old_label = label_ids.get(old_classification)
+                if old_label:
+                    remove_labels.append(old_label)
+            if remove_labels:
+                await asyncio.to_thread(
+                    gmail_client.modify_labels, message_id,
+                    add=[label_id], remove=remove_labels,
+                )
+            else:
+                await asyncio.to_thread(
+                    gmail_client.modify_labels, message_id, add=[label_id],
+                )
 
         # Store in DB
         record = EmailRecord(
@@ -214,12 +229,15 @@ class WorkerPool:
         await asyncio.to_thread(self.emails.upsert, record)
 
         # Log event
+        event_detail = f"{result.category} ({result.confidence}, source={result.source})"
+        if force:
+            event_detail = f"reclassified: {old_classification} → {result.category} ({result.confidence})"
         await asyncio.to_thread(
             self.events.log,
             job.user_id,
             msg.thread_id,
             "classified",
-            f"{result.category} ({result.confidence}, source={result.source})",
+            event_detail,
         )
 
         # Queue draft if needs_response, otherwise mark as skipped
