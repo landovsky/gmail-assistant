@@ -12,10 +12,10 @@ The email processing pipeline is the core domain logic. It classifies incoming e
 
 Classification uses two tiers evaluated in sequence:
 
-1. **Rule-based tier** — Deterministic pattern matching. Instant, no external calls. Always runs.
-2. **LLM-based tier** — Sends email content to a language model. Always runs (rule shortcut is currently disabled).
+1. **Rule-based tier** — Deterministic detection of automated/machine-generated emails via sender patterns and RFC headers. Instant, no external calls. Always runs.
+2. **LLM-based tier** — Sends email content to a language model for classification and style detection. Always runs.
 
-The rule tier's primary function in the current implementation is **automation detection** — it identifies machine-generated emails via sender patterns and RFC headers. This detection acts as a safety net: if the LLM classifies an automated email as `needs_response`, the rule engine overrides it to `fyi`.
+The rule tier's sole function is **automation detection** — it identifies machine-generated emails. This detection acts as a safety net: if the LLM classifies an automated email as `needs_response`, the rule engine overrides it to `fyi`.
 
 ### Classification Categories
 
@@ -28,6 +28,8 @@ The rule tier's primary function in the current implementation is **automation d
 | `waiting` | User sent the last message, awaiting reply | No |
 
 ### Rule-Based Detection
+
+> **`[CHANGE REQUEST: CR-01]` Remove content pattern matching entirely.** The rule tier must only perform automation detection (blacklist, automated sender patterns, header inspection). All content-based classification (payment patterns, action patterns, FYI patterns, response patterns) is removed. The system relies exclusively on the LLM for content-based classification decisions.
 
 **Blacklist check:** Sender email matched against glob patterns (e.g., `*@marketing.example.com`). Match → `fyi` with high confidence.
 
@@ -43,15 +45,7 @@ The rule tier's primary function in the current implementation is **automation d
 - `X-Autoreply` (any value)
 - `X-Autorespond` (any value)
 
-**Content pattern matching** (applied to subject + snippet + body, case-insensitive):
-- Payment patterns (invoices, billing terms, currency symbols) → `payment_request`
-- Action patterns (meeting requests, approval, signatures) → `action_required`
-- FYI patterns (newsletter, unsubscribe, automated) → `fyi`
-- Response patterns (question marks, "can you", Czech equivalents) → `needs_response` (medium confidence, passed to LLM)
-
-Pattern lists include Czech and German equivalents for multilingual support.
-
-**Rule tier output:** Even when the shortcut is disabled, the rule tier returns an `is_automated` flag. This flag is used as a safety net after LLM classification.
+**Rule tier output:** The rule tier returns an `is_automated` flag. This flag is used as a safety net after LLM classification. The rule tier does NOT perform any content-based pattern matching — all classification of email intent (payment, action, response, FYI) is delegated entirely to the LLM.
 
 ### LLM Classification
 
@@ -67,12 +61,21 @@ Messages in thread: {message_count}
 **System prompt instructs the LLM to:**
 - Classify into exactly ONE category
 - Follow priority rules (meetings → action_required; invoices → payment_request; direct questions → needs_response; uncertain → prefer needs_response over fyi)
-- Return JSON: `{"category": "...", "confidence": "high|medium|low", "reasoning": "...", "detected_language": "cs|en|de|..."}`
+- Detect the appropriate response style for drafting
+- Return JSON: `{"category": "...", "confidence": "high|medium|low", "reasoning": "...", "detected_language": "cs|en|de|...", "resolved_style": "..."}`
+
+> **`[CHANGE REQUEST: CR-02]` LLM determines response style unless overridden.** The LLM classification response must include a `resolved_style` field. Style resolution follows this priority:
+> 1. **Exact email match** in `contacts.style_overrides` — takes precedence (user explicitly configured)
+> 2. **Domain pattern match** in `contacts.domain_overrides` — takes precedence
+> 3. **LLM-determined style** — if no override matches, use the style returned by the LLM in its classification response
+>
+> The LLM prompt must be updated to include available style names and instruct the LLM to select the most appropriate one based on the email's tone, sender relationship signals, and content.
 
 **Fallback behavior:**
 - JSON parse error → defaults to `needs_response` with low confidence (safer to over-triage)
 - Unknown category in response → defaults to `needs_response`
 - LLM API error → defaults to `needs_response` with low confidence
+- Missing `resolved_style` in LLM response → defaults to `business`
 
 ### Safety Net
 
@@ -80,11 +83,12 @@ After LLM classification, if the rule engine detected automation signals AND the
 
 ### Communication Style Resolution
 
-After classification, the system determines a communication style for draft generation:
+Style is determined by a layered approach:
 
-1. **Exact email match:** Check `contacts.style_overrides` for the sender's exact email
-2. **Domain pattern match:** Check `contacts.domain_overrides` with glob matching on the sender's domain
-3. **Default:** `business`
+1. **Exact email match:** Check `contacts.style_overrides` for the sender's exact email → use that style
+2. **Domain pattern match:** Check `contacts.domain_overrides` with glob matching on the sender's domain → use that style
+3. **LLM-determined:** Use the `resolved_style` returned by the LLM classification response
+4. **Fallback:** `business`
 
 ---
 
@@ -169,10 +173,10 @@ Before generating a draft, the system optionally searches the user's mailbox for
 
 ### Process
 
-1. **Generate search queries:** Send the email's sender, subject, and body to the LLM, which returns up to 3 Gmail search queries as a JSON array.
-2. **Execute searches:** Run each query against Gmail's search API (metadata-only fetch for efficiency).
+1. **Generate search queries:** Send the email's sender, subject, and body to the LLM (using the configurable context model — defaults to the fast/cheap model, overridable via `llm.context_model`), which returns up to 3 Gmail search queries as a JSON array.
+2. **Execute searches:** Run each query against Gmail's search API (metadata-only fetch — no message bodies, only sender, subject, snippet per result).
 3. **Deduplicate:** Remove results from the current thread, deduplicate by thread_id.
-4. **Cap results:** Maximum 5 related threads.
+4. **Cap results:** Maximum 5 related threads (not thread messages — each result is one thread with its metadata only).
 
 ### Output Format
 
@@ -200,29 +204,43 @@ The user applies the "Rework" label to a thread in Gmail. The sync engine detect
 
 ### Process
 
+> **`[CHANGE REQUEST: CR-03]` Rework must follow the same flow as initial draft generation.** The rework process must gather related context (just like the initial draft), include it in the prompt, and generate a fresh draft. The only difference from initial draft generation is that the prompt additionally includes the user's rework instructions. This ensures reworked drafts have the same quality and context as initial drafts.
+
 1. Look up the email record and current rework count
 2. **Check rework limit (3):**
    - If `rework_count >= 3`: move labels from Rework → Action Required, set status to `skipped`, log `rework_limit_reached` event. Stop.
 3. Fetch the current draft from Gmail
-4. Extract instruction text (above the `✂️` marker) and the existing draft text (below)
+4. Extract instruction text (above the `✂️` marker)
 5. If no instruction found: use `"(no specific instruction provided)"`
-6. Fetch the thread for context
-7. Call LLM with a rework-specific prompt that includes the original thread, current draft, and user feedback
-8. If this is the 3rd rework (count will become 3): prepend a warning to the draft
-9. Trash the old draft
-10. Create a new Gmail draft
-11. Move labels: Rework → Outbox (or Rework → Action Required if 3rd rework)
-12. Update database: increment rework_count, store new draft_id and instruction
+6. Fetch the full Gmail thread (all messages)
+7. **Gather related context from the mailbox** (same as initial draft — fail-safe)
+8. Call LLM with the standard draft prompt (same system prompt, same thread body, same related context), with the user's rework instructions appended as a user instructions block
+9. If this is the 3rd rework (count will become 3): prepend a warning to the draft
+10. Trash the old draft
+11. Create a new Gmail draft
+12. Move labels: Rework → Outbox (or Rework → Action Required if 3rd rework)
+13. Update database: increment rework_count, store new draft_id and instruction
 
 ### Rework Prompt
 
-The rework prompt includes:
-- Sender info, subject
-- Thread body (3000 char limit)
-- Current draft text
-- User's rework instruction
-- Rework number
-- Instruction: "Regenerate the draft incorporating the user's feedback. Preserve any factual content the user added."
+The rework prompt is identical to the initial draft prompt (same system prompt built from communication style config), with one addition — the user's rework instruction is included as a user instructions block:
+
+```
+From: {sender_name} <{sender_email}>
+Subject: {subject}
+
+Thread:
+{thread_body, truncated to 3000 characters}
+
+{related context block, if available}
+
+--- User instructions ---
+{rework instruction extracted from above ✂️ marker}
+--- End instructions ---
+
+Incorporate these instructions into the draft. They guide WHAT to say,
+not HOW to say it. The draft should still follow the style rules.
+```
 
 ### Last Rework Warning
 
@@ -235,15 +253,20 @@ On the 3rd rework, the draft is prefixed with:
 
 ## Manual Draft
 
-Users can manually request a draft for any email by applying the "Needs Response" label in Gmail. This creates a `manual_draft` job that:
+Users can manually request a draft for any email by applying the "Needs Response" label in Gmail. This creates a `manual_draft` job.
+
+> **`[CHANGE REQUEST: CR-04]` Manual draft must follow the exact same flow as initial draft generation.** The manual draft process is identical to the automatic draft flow (full context gathering, same prompt structure, same LLM call). The only difference is that user instructions (if found in a notes draft) are appended to the prompt. This ensures manual drafts have the same quality and context as automatic ones.
+
+The manual draft handler:
 
 1. Checks if the email is already drafted (skips if so)
-2. Fetches the thread
+2. Fetches the full Gmail thread (all messages)
 3. Looks for a user-written notes draft in the thread (extracts instructions from above the `✂️` marker, or treats the entire draft body as instructions)
 4. Creates or updates the database record with `classification=needs_response`
-5. Gathers context and generates a draft (same as automatic draft flow)
-6. Trashes the user's notes draft and any stale AI drafts
-7. Creates a new Gmail draft, moves labels
+5. **Gathers related context from the mailbox** (same as automatic draft — fail-safe)
+6. Generates a draft using the standard draft prompt (same system prompt, same thread body, same related context), with user instructions appended if found
+7. Trashes the user's notes draft and any stale AI drafts
+8. Creates a new Gmail draft, moves labels (Needs Response → Outbox)
 
 ---
 
