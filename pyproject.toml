@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gmail-assistant"
-version = "2.2.1"
+version = "2.2.2"
 description = "AI-powered Gmail inbox management — direct API, model-agnostic LLM gateway"
 requires-python = ">=3.11"
 dependencies = [
