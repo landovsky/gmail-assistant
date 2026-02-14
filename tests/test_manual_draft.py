@@ -102,7 +102,7 @@ class TestSyncEngineNeedsResponseDetection:
 
         # Should enqueue cleanup for done, not manual_draft
         engine.jobs.enqueue.assert_called_once_with(
-            "cleanup", 1, {"message_id": "msg_1", "action": "done"}
+            "cleanup", 1, {"message_id": "msg_1", "thread_id": "thread_1", "action": "done"}
         )
 
     def test_both_done_and_needs_response_labels_queue_both(self):

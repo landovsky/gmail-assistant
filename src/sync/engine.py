@@ -188,7 +188,10 @@ class SyncEngine:
                 if key in seen_jobs:
                     continue
                 seen_jobs.add(key)
-                self.jobs.enqueue("cleanup", user_id, {"message_id": msg_id, "action": "done"})
+                self.jobs.enqueue(
+                    "cleanup", user_id,
+                    {"message_id": msg_id, "thread_id": thread_id, "action": "done"},
+                )
                 result.label_changes += 1
                 result.jobs_queued += 1
 
