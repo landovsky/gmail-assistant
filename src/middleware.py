@@ -44,13 +44,15 @@ class BasicAuthMiddleware:
             try:
                 decoded = base64.b64decode(auth[6:]).decode("utf-8")
                 user, _, pwd = decoded.partition(":")
-                if secrets.compare_digest(user, self._username) and secrets.compare_digest(
+                valid = secrets.compare_digest(user, self._username) and secrets.compare_digest(
                     pwd, self._password
-                ):
-                    await self.app(scope, receive, send)
-                    return
+                )
             except Exception:
-                pass
+                valid = False
+
+            if valid:
+                await self.app(scope, receive, send)
+                return
 
         response = Response(
             status_code=401,
