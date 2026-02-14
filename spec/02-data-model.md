@@ -59,11 +59,7 @@ Key-value store for per-user settings. Values are stored as JSON-serialized text
 - `contacts` — Style overrides per sender email, domain overrides, blacklist patterns
 - `label_ids_yaml` — Legacy label ID mapping (imported from v1 config, not used at runtime)
 
-**Current behavior:** Settings are loaded with a DB-first, YAML-fallback pattern. At runtime, `communication_styles` and `contacts` are read from the DB; if no DB value exists, the system falls back to reading `config/communication_styles.yml` and `config/contacts.yml` directly from disk. During user onboarding, `import_from_yaml()` copies the YAML content into the DB so subsequent reads use the DB.
-
-> **`[CHANGE REQUEST: CR-06]` Remove YAML fallback — DB must be the sole source of settings at runtime.** The YAML config files (`communication_styles.yml`, `contacts.yml`) should only serve as seed data during onboarding (imported into the DB). After onboarding, the system must read exclusively from the `user_settings` table with no YAML fallback. This eliminates a confusing dual-source behavior where changes to the DB can be silently overridden by stale YAML files (or vice versa), and ensures multi-user deployments have fully independent settings per user.
->
-> YAML files remain as the import source for onboarding and as documentation of the expected settings structure. The API endpoints (`GET/PUT /api/users/{user_id}/settings`) are the mechanism for runtime changes.
+**Current behavior:** Settings are loaded with a DB-first, YAML-fallback pattern. At runtime, `communication_styles` and `contacts` are read from the DB; if no DB value exists, the system falls back to reading `config/communication_styles.yml` and `config/contacts.yml` directly from disk. During user onboarding, `import_from_yaml()` copies the YAML content into the DB so subsequent reads use the DB. The API endpoints (`GET/PUT /api/users/{user_id}/settings`) allow runtime changes to DB-stored values.
 
 ---
 
