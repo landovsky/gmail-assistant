@@ -21,12 +21,13 @@ Single environment. No staging. Development happens on `main`, deploy by merging
 
 ## Deployment
 
-**Method:** GitOps — push to main triggers image build, Flux detects new image and updates cluster
+**Method:** GitOps — push to `production` triggers image build, Flux detects new image and updates cluster
 **K3s Manifests Repo:** `github.com/landovsky/k3s` (`apps/gmail-assistant/`)
 **Image:** `ghcr.io/landovsky/gmail-assistant`
+**Deploy command:** `git push origin main:production`
 
 **Deploy Process:**
-1. Push code to `main` branch
+1. Push/merge to `production` branch (`git push origin main:production`)
 2. GitHub Actions builds Docker image, pushes to ghcr.io with semver tag
 3. Flux ImageUpdateAutomation detects new tag (polls every 5m)
 4. Flux commits updated image tag to k3s repo
@@ -111,7 +112,7 @@ kubectl create secret generic gmail-assistant-config \
 - pytest on Python 3.11 + 3.12
 
 **Docker Build:** `.github/workflows/docker.yml`
-- Triggered on push to `main`
+- Triggered on push to `production`
 - Builds multi-stage Docker image with uv
 - Pushes to `ghcr.io/landovsky/gmail-assistant:{version}` + `:latest`
 - Version extracted from `pyproject.toml`
