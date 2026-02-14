@@ -33,6 +33,7 @@ class ClassifyResult:
     confidence: str
     reasoning: str
     detected_language: str = "cs"
+    resolved_style: str = "business"
 
     VALID_CATEGORIES = {"needs_response", "action_required", "payment_request", "fyi", "waiting"}
 
@@ -57,6 +58,7 @@ class ClassifyResult:
                 confidence=data.get("confidence", "medium"),
                 reasoning=data.get("reasoning", ""),
                 detected_language=data.get("detected_language", "cs"),
+                resolved_style=data.get("resolved_style", "business"),
             )
         except json.JSONDecodeError:
             logger.warning("Failed to parse LLM response as JSON: %s", content[:200])

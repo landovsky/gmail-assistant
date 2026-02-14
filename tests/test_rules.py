@@ -1,4 +1,7 @@
-"""Tests for rule-based classification engine."""
+"""Tests for rule-based automation detection and style resolution.
+
+CR-01: Rules only detect automation. Content pattern tests removed.
+"""
 
 import pytest
 
@@ -17,6 +20,7 @@ class TestBlacklistMatching:
         assert result.category == "fyi"
         assert result.confidence == "high"
         assert result.matched is True
+        assert result.is_automated is True
 
     def test_no_match(self):
         result = classify_by_rules(
@@ -36,8 +40,7 @@ class TestBlacklistMatching:
             body="",
             blacklist=[],
         )
-        # Normal sender with no blacklist — not matched by blacklist
-        assert result.reasoning != "Sender colleague@company.com matched blacklist"
+        assert result.matched is False
 
 
 class TestAutomatedSender:
@@ -51,6 +54,7 @@ class TestAutomatedSender:
         )
         assert result.category == "fyi"
         assert result.matched is True
+        assert result.is_automated is True
 
     def test_notifications(self):
         result = classify_by_rules(
@@ -62,10 +66,41 @@ class TestAutomatedSender:
         )
         assert result.category == "fyi"
         assert result.matched is True
+        assert result.is_automated is True
 
 
-class TestPaymentPatterns:
-    def test_invoice_in_subject(self):
+class TestHeaderDetection:
+    def test_auto_submitted(self):
+        result = classify_by_rules(
+            sender_email="system@company.com",
+            subject="Report",
+            snippet="",
+            body="",
+            blacklist=[],
+            headers={"Auto-Submitted": "auto-generated"},
+        )
+        assert result.category == "fyi"
+        assert result.matched is True
+        assert result.is_automated is True
+
+    def test_list_unsubscribe(self):
+        result = classify_by_rules(
+            sender_email="promo@shop.com",
+            subject="Sale",
+            snippet="",
+            body="",
+            blacklist=[],
+            headers={"List-Unsubscribe": "<mailto:unsub@shop.com>"},
+        )
+        assert result.category == "fyi"
+        assert result.matched is True
+        assert result.is_automated is True
+
+
+class TestContentPassesToLLM:
+    """Content-based emails are no longer classified by rules."""
+
+    def test_invoice_passes_through(self):
         result = classify_by_rules(
             sender_email="vendor@company.com",
             subject="Invoice #12345",
@@ -73,32 +108,9 @@ class TestPaymentPatterns:
             body="",
             blacklist=[],
         )
-        assert result.category == "payment_request"
-        assert result.confidence == "high"
+        assert result.matched is False
 
-    def test_faktura_czech(self):
-        result = classify_by_rules(
-            sender_email="vendor@firma.cz",
-            subject="Faktura za služby",
-            snippet="",
-            body="",
-            blacklist=[],
-        )
-        assert result.category == "payment_request"
-
-    def test_amount_in_body(self):
-        result = classify_by_rules(
-            sender_email="vendor@company.com",
-            subject="Services",
-            snippet="",
-            body="Please pay 5000 CZK by end of month",
-            blacklist=[],
-        )
-        assert result.category == "payment_request"
-
-
-class TestActionPatterns:
-    def test_please_sign(self):
+    def test_action_passes_through(self):
         result = classify_by_rules(
             sender_email="hr@company.com",
             subject="Contract",
@@ -106,43 +118,9 @@ class TestActionPatterns:
             body="",
             blacklist=[],
         )
-        assert result.category == "action_required"
+        assert result.matched is False
 
-    def test_approval_required(self):
-        result = classify_by_rules(
-            sender_email="system@company.com",
-            subject="Approval required",
-            snippet="",
-            body="",
-            blacklist=[],
-        )
-        assert result.category == "action_required"
-
-
-class TestFYIPatterns:
-    def test_newsletter(self):
-        result = classify_by_rules(
-            sender_email="editor@news.com",
-            subject="Weekly Newsletter",
-            snippet="",
-            body="Click to unsubscribe",
-            blacklist=[],
-        )
-        assert result.category == "fyi"
-
-    def test_automated_message(self):
-        result = classify_by_rules(
-            sender_email="system@company.com",
-            subject="Report",
-            snippet="This is an automated message",
-            body="",
-            blacklist=[],
-        )
-        assert result.category == "fyi"
-
-
-class TestResponsePatterns:
-    def test_question_mark(self):
+    def test_question_passes_through(self):
         result = classify_by_rules(
             sender_email="colleague@company.com",
             subject="Meeting",
@@ -150,22 +128,9 @@ class TestResponsePatterns:
             body="Are you free tomorrow?",
             blacklist=[],
         )
-        # Question marks trigger needs_response but with matched=False (pass to LLM)
-        assert result.category == "needs_response"
+        assert result.matched is False
 
-    def test_can_you(self):
-        result = classify_by_rules(
-            sender_email="boss@company.com",
-            subject="Task",
-            snippet="Can you review this document",
-            body="",
-            blacklist=[],
-        )
-        assert result.category == "needs_response"
-
-
-class TestNoMatch:
-    def test_ambiguous_email(self):
+    def test_ambiguous_passes_through(self):
         result = classify_by_rules(
             sender_email="person@company.com",
             subject="Update",

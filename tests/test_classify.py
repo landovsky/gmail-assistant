@@ -2,19 +2,42 @@
 
 import pytest
 
-from src.classify.prompts import CLASSIFY_SYSTEM_PROMPT, build_classify_user_message
+from src.classify.prompts import (
+    CLASSIFY_SYSTEM_PROMPT,
+    build_classify_system_prompt,
+    build_classify_user_message,
+)
 
 
 class TestClassifyPrompts:
-    def test_system_prompt_has_categories(self):
+    def test_system_prompt_template_has_categories(self):
         assert "needs_response" in CLASSIFY_SYSTEM_PROMPT
         assert "action_required" in CLASSIFY_SYSTEM_PROMPT
         assert "payment_request" in CLASSIFY_SYSTEM_PROMPT
         assert "fyi" in CLASSIFY_SYSTEM_PROMPT
         assert "waiting" in CLASSIFY_SYSTEM_PROMPT
 
-    def test_system_prompt_requires_json(self):
+    def test_system_prompt_template_requires_json(self):
         assert "JSON" in CLASSIFY_SYSTEM_PROMPT or "json" in CLASSIFY_SYSTEM_PROMPT
+
+    def test_system_prompt_template_has_resolved_style(self):
+        assert "resolved_style" in CLASSIFY_SYSTEM_PROMPT
+
+    def test_build_system_prompt_default(self):
+        prompt = build_classify_system_prompt()
+        assert "formal" in prompt
+        assert "business" in prompt
+        assert "informal" in prompt
+        assert "resolved_style" in prompt
+
+    def test_build_system_prompt_with_config(self):
+        config = {
+            "default": "business",
+            "styles": {"formal": {}, "business": {}, "informal": {}, "casual": {}},
+        }
+        prompt = build_classify_system_prompt(config)
+        assert '"casual"' in prompt
+        assert "business" in prompt
 
     def test_build_user_message(self):
         msg = build_classify_user_message(

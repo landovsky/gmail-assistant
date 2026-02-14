@@ -180,6 +180,7 @@ class WorkerPool:
             blacklist=settings.blacklist,
             contacts_config=contacts,
             headers=msg.headers,
+            style_config=settings.communication_styles,
             user_id=job.user_id,
             gmail_thread_id=msg.thread_id,
         )

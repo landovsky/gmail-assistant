@@ -19,13 +19,37 @@ Decision rules (in priority order):
 7. Automated senders, marketing, newsletters → fyi
 8. I sent the last message, no new reply → waiting
 
+Also select a communication style for the draft response. Available styles:
+{style_names}
+
+Pick the style that best matches the email's tone and sender relationship:
+- "formal" for institutional, official, or respectful correspondence
+- "business" for professional, work-related communication (default if unsure)
+- "informal" for friends, family, casual acquaintances
+
 Respond with JSON only:
-{
+{{
   "category": "needs_response|action_required|payment_request|fyi|waiting",
   "confidence": "high|medium|low",
   "reasoning": "brief explanation in English",
-  "detected_language": "cs|en|de|..."
-}"""
+  "detected_language": "cs|en|de|...",
+  "resolved_style": "{default_style}"
+}}"""
+
+
+def build_classify_system_prompt(style_config: dict | None = None) -> str:
+    """Build the classification system prompt with available style names."""
+    if style_config:
+        style_names = ", ".join(f'"{s}"' for s in style_config.get("styles", {}).keys())
+        default_style = style_config.get("default", "business")
+    else:
+        style_names = '"formal", "business", "informal"'
+        default_style = "business"
+
+    return CLASSIFY_SYSTEM_PROMPT.format(
+        style_names=style_names or '"formal", "business", "informal"',
+        default_style=default_style,
+    )
 
 
 def build_classify_user_message(

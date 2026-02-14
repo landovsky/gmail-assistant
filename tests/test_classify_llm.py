@@ -1,7 +1,7 @@
 """Tests for LLM classification (Tier 2) with mocked gateway.
 
 Tests the ClassificationEngine end-to-end: rules + LLM fallback.
-Also tests the ClassifyResult parser for robustness.
+Also tests the ClassifyResult parser for robustness, including resolved_style.
 """
 
 from __future__ import annotations
@@ -33,12 +33,14 @@ class TestClassifyResultParser:
             "confidence": "high",
             "reasoning": "Meeting request",
             "detected_language": "cs",
+            "resolved_style": "formal",
         }
         result = ClassifyResult.parse(self._make_response(json.dumps(data)))
         assert result.category == "action_required"
         assert result.confidence == "high"
         assert result.reasoning == "Meeting request"
         assert result.detected_language == "cs"
+        assert result.resolved_style == "formal"
 
     def test_valid_json_with_whitespace(self):
         content = """
@@ -46,11 +48,13 @@ class TestClassifyResultParser:
             "category": "needs_response",
             "confidence": "medium",
             "reasoning": "Direct question",
-            "detected_language": "en"
+            "detected_language": "en",
+            "resolved_style": "business"
         }
         """
         result = ClassifyResult.parse(self._make_response(content))
         assert result.category == "needs_response"
+        assert result.resolved_style == "business"
 
     def test_invalid_json_defaults_to_needs_response(self):
         """Parse errors should default to needs_response, not fyi."""
@@ -58,6 +62,7 @@ class TestClassifyResultParser:
         assert result.category == "needs_response"
         assert result.confidence == "low"
         assert "Parse error" in result.reasoning
+        assert result.resolved_style == "business"
 
     def test_empty_response(self):
         result = ClassifyResult.parse(self._make_response(""))
@@ -86,6 +91,21 @@ class TestClassifyResultParser:
             result = ClassifyResult.parse(self._make_response(json.dumps(data)))
             assert result.category == cat
 
+    def test_missing_resolved_style_defaults_to_business(self):
+        data = {"category": "needs_response", "confidence": "high", "reasoning": "test"}
+        result = ClassifyResult.parse(self._make_response(json.dumps(data)))
+        assert result.resolved_style == "business"
+
+    def test_resolved_style_parsed(self):
+        data = {
+            "category": "needs_response",
+            "confidence": "high",
+            "reasoning": "test",
+            "resolved_style": "informal",
+        }
+        result = ClassifyResult.parse(self._make_response(json.dumps(data)))
+        assert result.resolved_style == "informal"
+
 
 # ── ClassificationEngine integration tests ───────────────────────────────────
 
@@ -93,7 +113,9 @@ class TestClassifyResultParser:
 class TestClassificationEngine:
     """Test the full two-tier pipeline with mocked LLM."""
 
-    def _make_engine(self, llm_category: str = "needs_response") -> ClassificationEngine:
+    def _make_engine(
+        self, llm_category: str = "needs_response", llm_style: str = "business"
+    ) -> ClassificationEngine:
         """Create engine with a mocked LLM gateway."""
         mock_gateway = MagicMock(spec=LLMGateway)
         mock_gateway.classify.return_value = ClassifyResult(
@@ -101,11 +123,12 @@ class TestClassificationEngine:
             confidence="high",
             reasoning=f"LLM classified as {llm_category}",
             detected_language="cs",
+            resolved_style=llm_style,
         )
         return ClassificationEngine(mock_gateway)
 
-    def test_rule_match_still_calls_llm(self):
-        """Rule-based shortcut is disabled — LLM handles all classification."""
+    def test_llm_handles_all_classification(self):
+        """LLM handles all classification — content patterns removed from rules."""
         engine = self._make_engine(llm_category="payment_request")
         result = engine.classify(
             sender_email="person@example.com",
@@ -138,24 +161,6 @@ class TestClassificationEngine:
         assert result.source == "llm"
         engine.llm.classify.assert_called_once()
 
-    def test_medium_confidence_rule_calls_llm(self):
-        """Response patterns (medium confidence, matched=False) still call LLM."""
-        engine = self._make_engine(llm_category="action_required")
-        result = engine.classify(
-            sender_email="person@example.com",
-            sender_name="Person",
-            subject="Quick question",
-            snippet="",
-            body="Are you available tomorrow?",
-            message_count=1,
-            blacklist=[],
-            contacts_config={},
-        )
-        # The rule engine sees "?" and returns needs_response/medium/matched=False
-        # So LLM is called, and LLM says action_required
-        assert result.category == "action_required"
-        assert result.source == "llm"
-
     def test_blacklist_overrides_llm_to_fyi(self):
         """Blacklisted sender: LLM still runs but automated safety net forces fyi."""
         engine = self._make_engine(llm_category="needs_response")
@@ -171,41 +176,6 @@ class TestClassificationEngine:
         )
         assert result.category == "fyi"
         assert result.source == "llm"
-
-    def test_czech_meeting_request_classified_by_llm(self):
-        """Meeting request — LLM handles all classification now."""
-        engine = self._make_engine(llm_category="action_required")
-        result = engine.classify(
-            sender_email="petr.ivan@example.com",
-            sender_name="Petr Ivan",
-            subject="žádost o schůzku",
-            snippet="Mohli bychom se potkat",
-            body="Dobrý den. Mohli bychom se potkat dnes odpoledne v 17:00 "
-            "v Berlin Hbf na kávu? Díky. Petr Ivan",
-            message_count=1,
-            blacklist=[],
-            contacts_config={},
-        )
-        assert result.category == "action_required"
-        assert result.source == "llm"
-        engine.llm.classify.assert_called_once()
-
-    def test_style_resolution_for_needs_response(self):
-        engine = self._make_engine(llm_category="needs_response")
-        result = engine.classify(
-            sender_email="teacher@school.cz",
-            sender_name="Teacher",
-            subject="Question",
-            snippet="",
-            body="How are the grades looking this semester?",
-            message_count=1,
-            blacklist=[],
-            contacts_config={
-                "style_overrides": {"teacher@school.cz": "formal"},
-                "domain_overrides": {},
-            },
-        )
-        assert result.resolved_style == "formal"
 
     def test_llm_error_defaults_to_needs_response(self):
         """If LLM fails entirely, should default to needs_response not fyi."""
@@ -227,6 +197,90 @@ class TestClassificationEngine:
             contacts_config={},
         )
         assert result.category == "needs_response"
+
+
+# ── CR-02: Style resolution priority ────────────────────────────────────────
+
+
+class TestStyleResolution:
+    """CR-02: Style priority: exact email > domain > LLM-determined > fallback."""
+
+    def _make_engine(self, llm_style: str = "business") -> ClassificationEngine:
+        mock_gateway = MagicMock(spec=LLMGateway)
+        mock_gateway.classify.return_value = ClassifyResult(
+            category="needs_response",
+            confidence="high",
+            reasoning="test",
+            detected_language="cs",
+            resolved_style=llm_style,
+        )
+        return ClassificationEngine(mock_gateway)
+
+    def test_exact_email_override_beats_llm(self):
+        """Exact email match in contacts overrides LLM-determined style."""
+        engine = self._make_engine(llm_style="informal")
+        result = engine.classify(
+            sender_email="teacher@school.cz",
+            sender_name="Teacher",
+            subject="Question",
+            snippet="",
+            body="How are the grades?",
+            message_count=1,
+            blacklist=[],
+            contacts_config={
+                "style_overrides": {"teacher@school.cz": "formal"},
+                "domain_overrides": {},
+            },
+        )
+        assert result.resolved_style == "formal"
+
+    def test_domain_override_beats_llm(self):
+        """Domain match in contacts overrides LLM-determined style."""
+        engine = self._make_engine(llm_style="informal")
+        result = engine.classify(
+            sender_email="official@example.gov.cz",
+            sender_name="Official",
+            subject="Notice",
+            snippet="",
+            body="Your case is under review.",
+            message_count=1,
+            blacklist=[],
+            contacts_config={
+                "style_overrides": {},
+                "domain_overrides": {"*.gov.cz": "formal"},
+            },
+        )
+        assert result.resolved_style == "formal"
+
+    def test_llm_style_used_when_no_override(self):
+        """When no config override exists, LLM-determined style is used."""
+        engine = self._make_engine(llm_style="informal")
+        result = engine.classify(
+            sender_email="friend@example.com",
+            sender_name="Friend",
+            subject="Hey",
+            snippet="",
+            body="What's up?",
+            message_count=1,
+            blacklist=[],
+            contacts_config={},
+        )
+        assert result.resolved_style == "informal"
+
+    def test_fallback_to_business(self):
+        """When LLM returns no style and no config override, defaults to business."""
+        engine = self._make_engine(llm_style="")
+        result = engine.classify(
+            sender_email="person@example.com",
+            sender_name="Person",
+            subject="Hi",
+            snippet="",
+            body="Hello.",
+            message_count=1,
+            blacklist=[],
+            contacts_config={},
+        )
+        assert result.resolved_style == "business"
 
 
 # ── Automated header safety net in engine ─────────────────────────────────
@@ -264,7 +318,7 @@ class TestAutomatedHeaderOverride:
         assert result.source == "llm"
 
     def test_automated_header_allows_llm_action_required(self):
-        """Automated email where LLM returns action_required — safety net overrides to fyi."""
+        """Automated email where LLM returns action_required — safety net only overrides needs_response."""
         engine = self._make_engine(llm_category="action_required")
         result = engine.classify(
             sender_email="ci@builds.com",
@@ -277,7 +331,7 @@ class TestAutomatedHeaderOverride:
             contacts_config={},
             headers={"Auto-Submitted": "auto-generated"},
         )
-        # LLM says action_required but safety net only overrides needs_response
+        # LLM says action_required — safety net only overrides needs_response
         assert result.category == "action_required"
         assert result.source == "llm"
 
