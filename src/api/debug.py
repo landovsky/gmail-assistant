@@ -308,6 +308,10 @@ a:hover { text-decoration:underline; }
 .topnav h1 { font-size:15px; font-weight:600; color:var(--accent); }
 .topnav a { color:var(--text2); font-size:12px; }
 .topnav a:hover { color:var(--text); }
+.topnav button { background:var(--accent); color:#fff; border:none;
+  padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px;
+  font-family:inherit; }
+.topnav button:hover { opacity:0.9; }
 
 /* Header card */
 .email-header { background:var(--surface); border:1px solid var(--border);
@@ -427,7 +431,24 @@ function toggle(id) {
   var el = document.getElementById(id);
   el.classList.toggle('open');
   var btn = el.previousElementSibling;
-  if (btn) btn.textContent = el.classList.contains('open') ? '▾ collapse' : '▸ expand';
+  if (btn) {
+    var label = btn.textContent.replace(/^[▸▾]\\s/, '');
+    btn.textContent = el.classList.contains('open') ? '▾ ' + label : '▸ ' + label;
+  }
+}
+function toggleAll(rowId, expand) {
+  var row = document.getElementById(rowId);
+  if (!row) return;
+  var contents = row.querySelectorAll('.expand-content');
+  var toggles = row.querySelectorAll('.expand-toggle');
+  contents.forEach(function(el) {
+    if (expand) el.classList.add('open');
+    else el.classList.remove('open');
+  });
+  toggles.forEach(function(btn) {
+    var label = btn.textContent.replace(/^[▸▾]\\s/, '');
+    btn.textContent = expand ? '▾ ' + label : '▸ ' + label;
+  });
 }
 function applyFilters() {
   var q = document.getElementById('q').value;
@@ -441,6 +462,16 @@ function applyFilters() {
   window.location.href = '/debug/emails' + (qs ? '?' + qs : '');
 }
 function resetFilters() { window.location.href = '/debug/emails'; }
+async function triggerFullSync() {
+  if (!confirm('Trigger a full sync? This will clear sync state and scan the entire inbox.')) return;
+  try {
+    var res = await fetch('/api/sync?full=true&user_id=1', {method: 'POST'});
+    var data = await res.json();
+    alert('Full sync queued successfully!');
+  } catch (err) {
+    alert('Failed to trigger sync: ' + err.message);
+  }
+}
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && document.activeElement.id === 'q') applyFilters();
 });
@@ -512,6 +543,7 @@ def _render_email_list(
   <h1>Email Debug</h1>
   <a href="/debug/emails">All Emails</a>
   <a href="/admin">SQLAdmin</a>
+  <button onclick="triggerFullSync()">Full Sync</button>
 </div>
 <div class="container">
   <div class="filter-bar">
@@ -595,7 +627,7 @@ def _render_debug_page(data: dict) -> str:
             }
         )
 
-    timeline_items.sort(key=lambda x: x["time"] or "")
+    timeline_items.sort(key=lambda x: x["time"] or "", reverse=True)
 
     tl_html = ""
     for item in timeline_items:
@@ -629,12 +661,13 @@ def _render_debug_page(data: dict) -> str:
     llm_rows = ""
     for i, lc in enumerate(llm_calls):
         exp_id = f"llm-{lc.get('id', i)}"
+        row_id = f"llm-row-{lc.get('id', i)}"
         error_cell = (
             f'<span style="color:var(--red)">{_e(lc.get("error"))}</span>'
             if lc.get("error")
             else "—"
         )
-        llm_rows += f"""<tr>
+        llm_rows += f"""<tr id="{row_id}">
           <td>{lc.get("id", "")}</td>
           <td>{_badge(lc.get("call_type"))}</td>
           <td>{_e(lc.get("model"))}</td>
@@ -645,6 +678,10 @@ def _render_debug_page(data: dict) -> str:
           <td>{error_cell}</td>
           <td>{_e(lc.get("created_at"))}</td>
           <td class="expandable">
+            <div style="margin-bottom:6px;">
+              <button onclick="toggleAll('{row_id}', true)" style="background:var(--surface2); color:var(--text2); border:1px solid var(--border); padding:2px 6px; border-radius:3px; cursor:pointer; font-size:10px; margin-right:4px;">expand all</button>
+              <button onclick="toggleAll('{row_id}', false)" style="background:var(--surface2); color:var(--text2); border:1px solid var(--border); padding:2px 6px; border-radius:3px; cursor:pointer; font-size:10px;">collapse all</button>
+            </div>
             <span class="expand-toggle" onclick="toggle('{exp_id}-sys')">▸ system</span>
             <div id="{exp_id}-sys" class="expand-content">{_e(lc.get("system_prompt"))}</div>
             <span class="expand-toggle" onclick="toggle('{exp_id}-usr')">▸ user</span>
@@ -707,6 +744,7 @@ def _render_debug_page(data: dict) -> str:
   <h1>Email Debug</h1>
   <a href="/debug/emails">← All Emails</a>
   <a href="/admin">SQLAdmin</a>
+  <button onclick="triggerFullSync()">Full Sync</button>
   <span style="margin-left:auto; display:flex; gap:12px">{prev_link} {next_link}</span>
 </div>
 <div class="container">
