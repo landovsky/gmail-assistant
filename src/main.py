@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from src.admin.setup import setup_admin
 from src.api.admin import router as admin_router
 from src.api.briefing import router as briefing_router
+from src.api.debug import router as debug_router
 from src.api.webhook import router as webhook_router
 from src.classify.engine import ClassificationEngine
 from src.config import AppConfig
@@ -151,6 +152,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(webhook_router)
     app.include_router(admin_router)
     app.include_router(briefing_router)
+    app.include_router(debug_router)
 
     # Mount admin UI
     setup_admin(app, str(config.database.sqlite_path))
