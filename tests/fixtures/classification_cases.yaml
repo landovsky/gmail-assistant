@@ -91,6 +91,23 @@ cases:
     subject: "Vyúčtování opravy"
     body: "Celková částka za opravu činí 15 000 Kč. Prosím o úhradu do 14 dnů."
 
+  # ── fyi: already-paid invoices (should NOT be payment_request) ──────────────
+
+  - id: fyi-07
+    description: "Invoice already paid by credit card (not a payment request)"
+    expected_category: fyi
+    sender_email: "billing@saas-vendor.com"
+    sender_name: "Billing"
+    subject: "Receipt for your payment"
+    body: "Your invoice #INV-2026-0451 for $49.00 has been paid. Charged to Visa ending in 4242. No action required."
+
+  - id: fyi-08
+    description: "Czech invoice paid by card (not a payment request)"
+    expected_category: fyi
+    sender_email: "info@dodavatel.cz"
+    subject: "Potvrzení platby - faktura 2026-0187"
+    body: "Faktura č. 2026-0187 na částku 34 850 Kč byla úspěšně zaplacena kartou. Děkujeme."
+
   # ── fyi ─────────────────────────────────────────────────────────────────────
 
   - id: fyi-01

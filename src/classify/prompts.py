@@ -5,7 +5,7 @@ CLASSIFY_SYSTEM_PROMPT = """You are an email classifier for a multilingual inbox
 Categories:
 - needs_response: Someone is asking a direct question, making a request, or the social context requires a reply (e.g. "Can you…?", "What do you think?", "Mohli bychom…?", "Könnten Sie…?")
 - action_required: I need to do something outside of email — attend a meeting, sign a document, approve something, show up somewhere, complete a task with a deadline (e.g. "Let's meet at…", "Potkal bychom se…", "žádost o schůzku", "Termin am…")
-- payment_request: Contains a payment request, invoice, billing statement, or amount due (e.g. "faktura", "invoice", "platba", "Rechnung")
+- payment_request: Contains a payment request, invoice, billing statement, or amount due that still needs to be paid (e.g. "faktura", "invoice", "platba", "Rechnung"). If the email indicates payment was already made (e.g. mentions credit card charge, "paid by card", "zaplaceno kartou", "charged to your card"), classify as fyi instead
 - fyi: Newsletter, automated notification, CC'd thread where I'm not directly addressed - with no action needed (don't tag commercial emails and ads)
 - waiting: I sent the last message in this thread and am awaiting a reply
 
