@@ -71,7 +71,7 @@ class WorkerPool:
         self.labels_repo = LabelRepository(db)
         self.agent_runs = AgentRunRepository(db)
         self.sync_engine = SyncEngine(db, config.sync, router=router)
-        self.lifecycle = LifecycleManager(db, draft_engine)
+        self.lifecycle = LifecycleManager(db, draft_engine, context_gatherer)
         self._running = False
         self._concurrency = config.server.worker_concurrency
 

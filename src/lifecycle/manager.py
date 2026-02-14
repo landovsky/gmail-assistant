@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from src.context.gatherer import ContextGatherer
 from src.db.models import EmailRepository, EventRepository, LabelRepository
 from src.db.connection import Database
 from src.draft.engine import DraftEngine
@@ -24,12 +25,14 @@ class LifecycleManager:
         self,
         db: Database,
         draft_engine: DraftEngine | None = None,
+        context_gatherer: ContextGatherer | None = None,
     ):
         self.db = db
         self.emails = EmailRepository(db)
         self.events = EventRepository(db)
         self.labels = LabelRepository(db)
         self.draft_engine = draft_engine
+        self.context_gatherer = context_gatherer
 
     def handle_done(
         self,
@@ -188,6 +191,21 @@ class LifecycleManager:
         latest = thread.latest_message
         thread_body = "\n---\n".join(m.body[:1000] for m in thread.messages)
 
+        # CR-03: Gather related context (same as initial draft flow)
+        related_context: str | None = None
+        if self.context_gatherer:
+            ctx = self.context_gatherer.gather(
+                gmail_client,
+                thread_id,
+                email["sender_email"],
+                email.get("subject", ""),
+                thread_body,
+                user_id=user_id,
+                gmail_thread_id=thread_id,
+            )
+            if not ctx.is_empty:
+                related_context = ctx.format_for_prompt()
+
         # Generate reworked draft
         new_draft_body, instruction = self.draft_engine.rework_draft(
             sender_email=email["sender_email"],
@@ -198,6 +216,7 @@ class LifecycleManager:
             rework_count=rework_count,
             resolved_style=email.get("resolved_style", "business"),
             style_config=style_config,
+            related_context=related_context,
             user_id=user_id,
             gmail_thread_id=thread_id,
         )

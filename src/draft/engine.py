@@ -63,9 +63,13 @@ class DraftEngine:
         rework_count: int,
         resolved_style: str,
         style_config: dict | None = None,
+        related_context: str | None = None,
         **llm_kwargs,
     ) -> tuple[str, str]:
         """Rework an existing draft based on user instructions.
+
+        CR-03: Rework now follows the same flow as initial draft generation,
+        including related context from the mailbox.
 
         Returns (new_draft_body_with_marker, extracted_instruction).
         """
@@ -86,6 +90,7 @@ class DraftEngine:
             old_draft,
             instruction,
             rework_count,
+            related_context=related_context,
         )
 
         raw_draft = self.llm.draft(system_prompt, user_message, is_rework=True, **llm_kwargs)

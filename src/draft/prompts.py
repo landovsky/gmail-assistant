@@ -86,8 +86,13 @@ def build_rework_user_message(
     current_draft: str,
     rework_instruction: str,
     rework_count: int,
+    related_context: str | None = None,
 ) -> str:
-    """Build the user message for rework draft generation."""
+    """Build the user message for rework draft generation.
+
+    CR-03: Rework now follows the same flow as initial draft generation,
+    including related context from the mailbox.
+    """
     parts = [
         f"From: {sender_name} <{sender_email}>" if sender_name else f"From: {sender_email}",
         f"Subject: {subject}",
@@ -95,6 +100,12 @@ def build_rework_user_message(
         "",
         "Thread:",
         thread_body[:3000],
+    ]
+
+    if related_context:
+        parts.extend(["", related_context])
+
+    parts.extend([
         "",
         "Current draft:",
         current_draft,
@@ -105,7 +116,7 @@ def build_rework_user_message(
         "Regenerate the draft incorporating the user's feedback. "
         "Preserve any factual content the user added. "
         "If the instruction is ambiguous, err on the side of minimal changes.",
-    ]
+    ])
 
     return "\n".join(parts)
 
