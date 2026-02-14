@@ -284,12 +284,35 @@ On application shutdown:
 - **Rationale:** Gmail watches expire after 7 days. Daily renewal provides margin.
 - **Failure handling:** Exceptions are caught and logged; the loop continues.
 
-### Fallback Sync
+### Fallback Sync (incremental)
 
-- **Frequency:** Every N minutes (configurable, default 15)
+- **Frequency:** Every N minutes (configurable via `GMA_SYNC_FALLBACK_INTERVAL_MINUTES`, default 15)
 - **Action:** Enqueues a `sync` job for each active user
 - **Rationale:** Safety net for missed Pub/Sub notifications (network issues, topic misconfiguration, etc.)
 - **Payload:** `{"history_id": ""}` — empty history_id means the sync engine uses the stored `last_history_id`
+- **Limitation:** Only processes history records since the last known history ID. If an email was missed entirely (e.g. watch was down and history expired), this won't find it.
+
+### Full Sync (catch-up scan)
+
+- **Frequency:** Every N hours (configurable via `GMA_SYNC_FULL_SYNC_INTERVAL_HOURS`, default 1)
+- **Action:** Enqueues a `sync` job with `force_full: true` for each active user
+- **Rationale:** The fallback sync is incremental — it only replays history since the last checkpoint. If emails slipped through during a watch outage or history gap, the incremental sync will never find them. The full sync scans `in:inbox newer_than:{days}d` (configurable via `GMA_SYNC_FULL_SYNC_DAYS`, default 10, production: 60) excluding already-labeled emails, so it catches anything the incremental sync missed.
+- **Payload:** `{"history_id": "", "force_full": true}`
+- **Idempotency:** Already-classified emails (those with any AI label) are excluded from the Gmail search query, and the classify handler skips threads that already have a DB record. Running this frequently is safe.
+
+### Why two sync schedules?
+
+The two schedules complement each other:
+
+| | Fallback Sync | Full Sync |
+|---|---|---|
+| **Method** | Gmail History API (incremental) | Gmail Search API (full scan) |
+| **Frequency** | Every 15 min | Every 1 hour |
+| **Catches** | Recent changes since last checkpoint | Any unlabeled inbox email within the time window |
+| **Cost** | Cheap (small history delta) | More expensive (search + filter) |
+| **Blind spot** | Emails missed before the checkpoint | None within the time window |
+
+The fallback sync handles the common case (a few missed push notifications) cheaply. The full sync is the true safety net that guarantees no email stays unprocessed for more than an hour.
 
 ---
 
