@@ -48,6 +48,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "e2e: end-to-end tests requiring a real LLM API key (skipped without one)",
+    "smoke: smoke tests against a running dev server (skipped if server is down)",
 ]
 
 [tool.ruff]
