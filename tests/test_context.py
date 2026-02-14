@@ -1,4 +1,8 @@
-"""Tests for context gathering — query generation, search, deduplication."""
+"""Tests for context gathering — query generation, search, deduplication, body fetching.
+
+CR-05: Context gathering now fetches full thread content (message bodies),
+not just metadata/snippets.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +11,7 @@ from unittest.mock import MagicMock
 from src.context.gatherer import ContextGatherer, GatheredContext
 from src.context.prompts import CONTEXT_SYSTEM_PROMPT, build_context_user_message
 from src.draft.prompts import build_draft_user_message
-from src.gmail.models import Message
+from src.gmail.models import Message, Thread
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -20,6 +24,7 @@ def _make_message(
     sender_name: str = "",
     subject: str = "Test Subject",
     snippet: str = "Test snippet",
+    body: str = "",
 ) -> Message:
     return Message(
         id=msg_id,
@@ -28,7 +33,12 @@ def _make_message(
         sender_name=sender_name,
         subject=subject,
         snippet=snippet,
+        body=body,
     )
+
+
+def _make_thread(thread_id: str, messages: list[Message] | None = None) -> Thread:
+    return Thread(id=thread_id, messages=messages or [])
 
 
 def _mock_gateway(raw_response: str = '["from:test@example.com", "project alpha"]'):
@@ -37,12 +47,23 @@ def _mock_gateway(raw_response: str = '["from:test@example.com", "project alpha"
     return gw
 
 
-def _mock_gmail_client(messages_per_query: list[list[Message]] | None = None):
+def _mock_gmail_client(
+    messages_per_query: list[list[Message]] | None = None,
+    threads: dict[str, Thread] | None = None,
+):
     client = MagicMock()
     if messages_per_query is not None:
         client.search_metadata.side_effect = messages_per_query
     else:
         client.search_metadata.return_value = []
+
+    if threads is not None:
+        client.get_thread.side_effect = lambda tid: threads.get(tid)
+    else:
+        # Default: return thread with single empty message
+        client.get_thread.side_effect = lambda tid: _make_thread(
+            tid, [_make_message("m", tid, body="Thread body content")]
+        )
     return client
 
 
@@ -94,7 +115,13 @@ class TestSearchAndDeduplicate:
             _make_message("m1", "current_thread"),
             _make_message("m2", "other_thread"),
         ]
-        client = _mock_gmail_client([[messages[0], messages[1]]])
+        thread = _make_thread(
+            "other_thread", [_make_message("m2", "other_thread", body="Hello")]
+        )
+        client = _mock_gmail_client(
+            [[messages[0], messages[1]]],
+            threads={"other_thread": thread},
+        )
 
         results = gatherer._search_and_deduplicate(
             client, ["from:test@example.com"], exclude_thread_id="current_thread"
@@ -131,11 +158,73 @@ class TestSearchAndDeduplicate:
         msg = _make_message("m1", "thread_a")
         client = MagicMock()
         client.search_metadata.side_effect = [Exception("API error"), [msg]]
+        client.get_thread.return_value = _make_thread(
+            "thread_a", [_make_message("m1", "thread_a", body="Content")]
+        )
 
         results = gatherer._search_and_deduplicate(
             client, ["bad_query", "good_query"], exclude_thread_id="none"
         )
         assert len(results) == 1
+
+    def test_fetches_thread_body(self):
+        """CR-05: Results include full thread body content."""
+        gw = _mock_gateway()
+        gatherer = ContextGatherer(gw)
+
+        msg = _make_message("m1", "thread_a", subject="Project")
+        thread = _make_thread("thread_a", [
+            _make_message("m1", "thread_a", body="First message about the project"),
+            _make_message("m2", "thread_a", body="Follow-up details"),
+        ])
+        client = _mock_gmail_client(
+            [[msg]],
+            threads={"thread_a": thread},
+        )
+
+        results = gatherer._search_and_deduplicate(
+            client, ["query1"], exclude_thread_id="none"
+        )
+        assert len(results) == 1
+        assert "First message about the project" in results[0]["body"]
+        assert "Follow-up details" in results[0]["body"]
+
+    def test_thread_body_truncated(self):
+        """CR-05: Thread bodies are truncated to prevent prompt bloat."""
+        gw = _mock_gateway()
+        gatherer = ContextGatherer(gw)
+
+        msg = _make_message("m1", "thread_a")
+        long_body = "x" * 3000
+        thread = _make_thread("thread_a", [
+            _make_message("m1", "thread_a", body=long_body),
+        ])
+        client = _mock_gmail_client(
+            [[msg]],
+            threads={"thread_a": thread},
+        )
+
+        results = gatherer._search_and_deduplicate(
+            client, ["query1"], exclude_thread_id="none"
+        )
+        # Body should be truncated to 2000 chars
+        assert len(results[0]["body"]) <= 2000
+
+    def test_thread_fetch_failure_falls_back_to_empty_body(self):
+        """If thread fetch fails, body should be empty but result still included."""
+        gw = _mock_gateway()
+        gatherer = ContextGatherer(gw)
+
+        msg = _make_message("m1", "thread_a")
+        client = _mock_gmail_client([[msg]])
+        client.get_thread.side_effect = Exception("Thread fetch failed")
+
+        results = gatherer._search_and_deduplicate(
+            client, ["query1"], exclude_thread_id="none"
+        )
+        assert len(results) == 1
+        assert results[0]["body"] == ""
+        assert results[0]["snippet"] == "Test snippet"
 
 
 # ── GatheredContext tests ────────────────────────────────────────────────────
@@ -148,7 +237,7 @@ class TestGatheredContext:
 
     def test_is_empty_false_when_threads_present(self):
         ctx = GatheredContext(
-            related_threads=[{"thread_id": "t1", "sender": "a", "subject": "b", "snippet": "c"}]
+            related_threads=[{"thread_id": "t1", "sender": "a", "subject": "b", "body": "c"}]
         )
         assert ctx.is_empty is False
 
@@ -156,20 +245,21 @@ class TestGatheredContext:
         ctx = GatheredContext()
         assert ctx.format_for_prompt() == ""
 
-    def test_format_for_prompt_structure(self):
+    def test_format_for_prompt_with_body(self):
+        """CR-05: Format includes full body content."""
         ctx = GatheredContext(
             related_threads=[
                 {
                     "thread_id": "t1",
                     "sender": "Alice <alice@example.com>",
                     "subject": "Project update",
-                    "snippet": "Here is the latest...",
+                    "body": "Here is the full conversation about the project.",
                 },
                 {
                     "thread_id": "t2",
                     "sender": "bob@example.com",
                     "subject": "Invoice",
-                    "snippet": "Please pay",
+                    "body": "Please pay the attached invoice for January.",
                 },
             ]
         )
@@ -178,18 +268,19 @@ class TestGatheredContext:
         assert "--- End related emails ---" in result
         assert "1. From: Alice <alice@example.com>" in result
         assert "Subject: Project update" in result
+        assert "Here is the full conversation about the project." in result
         assert "2. From: bob@example.com" in result
-        assert "Here is the latest..." in result
+        assert "Please pay the attached invoice for January." in result
 
-    def test_format_for_prompt_truncates_snippet(self):
+    def test_format_for_prompt_falls_back_to_snippet(self):
+        """When body is empty, falls back to snippet (truncated at 200 chars)."""
         long_snippet = "x" * 500
         ctx = GatheredContext(
             related_threads=[
-                {"thread_id": "t1", "sender": "a", "subject": "b", "snippet": long_snippet},
+                {"thread_id": "t1", "sender": "a", "subject": "b", "body": "", "snippet": long_snippet},
             ]
         )
         result = ctx.format_for_prompt()
-        # Snippet should be capped at 200 chars
         assert "x" * 200 in result
         assert "x" * 201 not in result
 
@@ -211,13 +302,24 @@ class TestGather:
             _make_message("m1", "thread_1", sender_email="alice@example.com", subject="Old thread")
         ]
         messages_q2 = [_make_message("m2", "thread_2", subject="Alpha update")]
-        client = _mock_gmail_client([messages_q1, messages_q2])
+        threads = {
+            "thread_1": _make_thread("thread_1", [
+                _make_message("m1", "thread_1", body="Old thread body"),
+            ]),
+            "thread_2": _make_thread("thread_2", [
+                _make_message("m2", "thread_2", body="Alpha update body"),
+            ]),
+        }
+        client = _mock_gmail_client([messages_q1, messages_q2], threads=threads)
 
         ctx = gatherer.gather(client, "current_thread", "alice@example.com", "Re: Alpha", "body")
         assert not ctx.is_empty
         assert len(ctx.related_threads) == 2
         assert ctx.queries_used == ["from:alice@example.com", "project alpha"]
         assert ctx.error is None
+        # CR-05: Body content should be fetched
+        assert ctx.related_threads[0]["body"] == "Old thread body"
+        assert ctx.related_threads[1]["body"] == "Alpha update body"
 
     def test_llm_failure_returns_empty(self):
         gw = MagicMock()

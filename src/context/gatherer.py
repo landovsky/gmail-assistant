@@ -1,4 +1,9 @@
-"""Context gatherer — finds related threads to enrich draft prompts."""
+"""Context gatherer — finds related threads to enrich draft prompts.
+
+CR-05: Fetches full thread content (message bodies) for related threads,
+not just metadata/snippets. Each thread's body is truncated to prevent
+prompt bloat.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,9 @@ from src.gmail.client import UserGmailClient
 from src.llm.gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
+
+# Max characters of combined message body per related thread
+_MAX_BODY_PER_THREAD = 2000
 
 
 @dataclass
@@ -35,9 +43,14 @@ class GatheredContext:
             lines.append(
                 f"{i}. From: {thread.get('sender', '?')} | Subject: {thread.get('subject', '?')}"
             )
-            snippet = thread.get("snippet", "")
-            if snippet:
-                lines.append(f"   {snippet[:200]}")
+            body = thread.get("body", "")
+            if body:
+                lines.append(f"   {body}")
+            else:
+                # Fallback to snippet if body not available
+                snippet = thread.get("snippet", "")
+                if snippet:
+                    lines.append(f"   {snippet[:200]}")
         lines.append("--- End related emails ---")
         return "\n".join(lines)
 
@@ -97,10 +110,11 @@ class ContextGatherer:
         exclude_thread_id: str,
         max_results: int = 5,
     ) -> list[dict[str, str]]:
-        """Run queries, deduplicate by thread_id, exclude current thread."""
+        """Run queries, deduplicate by thread_id, fetch full content, exclude current thread."""
         seen_threads: set[str] = set()
-        results: list[dict[str, str]] = []
+        thread_ids: list[tuple[str, str, str, str]] = []  # (thread_id, sender, subject, snippet)
 
+        # Phase 1: Search with metadata to find candidate thread IDs
         for query in queries:
             try:
                 messages = gmail_client.search_metadata(query, max_results=10)
@@ -115,20 +129,43 @@ class ContextGatherer:
                     continue
 
                 seen_threads.add(msg.thread_id)
-                results.append(
-                    {
-                        "thread_id": msg.thread_id,
-                        "sender": (
-                            f"{msg.sender_name} <{msg.sender_email}>"
-                            if msg.sender_name
-                            else msg.sender_email
-                        ),
-                        "subject": msg.subject,
-                        "snippet": msg.snippet,
-                    }
+                sender = (
+                    f"{msg.sender_name} <{msg.sender_email}>"
+                    if msg.sender_name
+                    else msg.sender_email
                 )
+                thread_ids.append((msg.thread_id, sender, msg.subject, msg.snippet))
 
-                if len(results) >= max_results:
-                    return results
+                if len(thread_ids) >= max_results:
+                    break
+            if len(thread_ids) >= max_results:
+                break
+
+        # Phase 2: Fetch full thread content for each candidate
+        results: list[dict[str, str]] = []
+        for tid, sender, subject, snippet in thread_ids:
+            try:
+                thread = gmail_client.get_thread(tid)
+                if thread and thread.messages:
+                    # Combine all message bodies, truncate to limit
+                    combined = "\n---\n".join(
+                        m.body[:1000] for m in thread.messages if m.body
+                    )
+                    body = combined[:_MAX_BODY_PER_THREAD]
+                else:
+                    body = ""
+            except Exception as e:
+                logger.warning("Failed to fetch thread %s for context: %s", tid, e)
+                body = ""
+
+            results.append(
+                {
+                    "thread_id": tid,
+                    "sender": sender,
+                    "subject": subject,
+                    "snippet": snippet,
+                    "body": body,
+                }
+            )
 
         return results
