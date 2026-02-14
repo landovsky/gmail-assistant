@@ -2,10 +2,26 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, TypeDecorator
 from sqlalchemy.orm import DeclarativeBase, relationship
+
+
+class EpochOrDatetime(TypeDecorator):
+    """Handle datetime columns that may store epoch-millis integers or ISO strings."""
+
+    impl = String
+    cache_ok = True
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, int):
+            return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
+        return value
 
 
 class Base(DeclarativeBase):
@@ -70,7 +86,7 @@ class SyncStateModel(Base):
     last_history_id = Column(String)
     last_sync_at = Column(DateTime)
     watch_resource_id = Column(String)
-    watch_expiration = Column(DateTime)
+    watch_expiration = Column(EpochOrDatetime)
 
 
 class EmailModel(Base):
@@ -86,7 +102,7 @@ class EmailModel(Base):
     sender_name = Column(String)
     subject = Column(String)
     snippet = Column(String)
-    received_at = Column(DateTime)
+    received_at = Column(EpochOrDatetime)
     classification = Column(String, nullable=False)
     confidence = Column(String, default="medium")
     reasoning = Column(Text)
