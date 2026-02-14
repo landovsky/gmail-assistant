@@ -39,6 +39,12 @@ Prevents repeating past mistakes during future development.
 - **Design for mobile-first input** — complex markers (`---✂--- Your instructions above this line`) don't work on phones. Use single-tap elements (✂️ emoji).
 - **Verify Gmail label structure matches spec** before creating labels — flat vs nested labels caused rework.
 
+## Middleware / Auth
+
+- **Never put handler dispatch inside a broad try/except** — in `BasicAuthMiddleware`, `await self.app(scope, receive, send)` was inside the same `try/except Exception: pass` as base64 decoding. Any handler exception (e.g. `IntegrityError`, `OSError`) was silently caught and fell through to the 401 response, making it look like an auth failure. Fix: parse credentials in the try block, dispatch to handler outside it.
+- **K8s Secret volumes are always read-only** — even without `readOnly: true` in the volumeMount. If your app needs to write (e.g. OAuth token refresh writing to `token.json`), use an initContainer to copy from Secret volume to an emptyDir, then mount the emptyDir.
+- **Fresh production DB has no users** — `POST /api/sync` with `user_id=1` hits `FOREIGN KEY constraint failed` if no user exists. Must call `POST /api/auth/init` first to bootstrap the first user via OAuth + onboarding.
+
 ## Config / Git Hygiene
 
 - **Git-ignore personal config files** — `communication_styles.yml` and `contacts.yml` contain real email addresses. Check in `.example` versions only.
