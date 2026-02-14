@@ -1,11 +1,11 @@
-"""Classification engine — two-tier: fast rules, then LLM for ambiguous cases."""
+"""Classification engine — two-tier: automation rules, then LLM for all content decisions."""
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 
-from src.classify.prompts import CLASSIFY_SYSTEM_PROMPT, build_classify_user_message
+from src.classify.prompts import build_classify_system_prompt, build_classify_user_message
 from src.classify.rules import classify_by_rules, resolve_communication_style
 from src.llm.gateway import LLMGateway
 
@@ -39,6 +39,7 @@ class ClassificationEngine:
         blacklist: list[str],
         contacts_config: dict,
         headers: dict[str, str] | None = None,
+        style_config: dict | None = None,
         **llm_kwargs,
     ) -> Classification:
         """Classify an email: rules first, then LLM if needed.
@@ -48,7 +49,7 @@ class ClassificationEngine:
         Precedence, etc.) and prevent unnecessary draft generation.
         """
 
-        # Tier 1: Rule-based (instant, free)
+        # Tier 1: Rule-based automation detection (instant, free)
         rule_result = classify_by_rules(
             sender_email,
             subject,
@@ -58,24 +59,10 @@ class ClassificationEngine:
             headers=headers,
         )
 
-        # NOTE: Rule-based shortcut disabled — LLM handles all classification.
-        # Rules still run for is_automated detection (safety net below).
-        # To re-enable, uncomment the block below:
-        #
-        # if rule_result.matched and rule_result.confidence == "high":
-        #     style = resolve_communication_style(sender_email, contacts_config)
-        #     return Classification(
-        #         category=rule_result.category,
-        #         confidence=rule_result.confidence,
-        #         reasoning=rule_result.reasoning,
-        #         detected_language="cs",
-        #         resolved_style=style,
-        #         source="rules",
-        #     )
-
-        # Tier 2: LLM-based (via gateway)
+        # Tier 2: LLM-based classification (via gateway)
+        system_prompt = build_classify_system_prompt(style_config)
         llm_result = self.llm.classify(
-            system=CLASSIFY_SYSTEM_PROMPT,
+            system=system_prompt,
             user_message=build_classify_user_message(
                 sender_email, sender_name, subject, snippet, body, message_count
             ),
@@ -85,9 +72,8 @@ class ClassificationEngine:
         category = llm_result.category
         reasoning = llm_result.reasoning
 
-        # Safety net: if the rule engine detected automation signals but didn't
-        # match high-confidence (e.g. action/payment patterns weren't present),
-        # prevent the LLM from overriding to needs_response.
+        # Safety net: if the rule engine detected automation signals,
+        # prevent the LLM from classifying as needs_response.
         if rule_result.is_automated and category == "needs_response":
             logger.info(
                 "LLM classified automated email as needs_response — overriding to fyi "
@@ -97,7 +83,18 @@ class ClassificationEngine:
             category = "fyi"
             reasoning = f"Automated email overridden from needs_response: {reasoning}"
 
-        style = resolve_communication_style(sender_email, contacts_config)
+        # CR-02: Style resolution priority:
+        # 1. Exact email match in contacts.style_overrides
+        # 2. Domain pattern match in contacts.domain_overrides
+        # 3. LLM-determined style from classification response
+        # 4. Fallback: "business"
+        config_style = resolve_communication_style(sender_email, contacts_config)
+        if config_style != "business":
+            # Config override found (exact email or domain match)
+            style = config_style
+        else:
+            # No config override — use LLM-determined style, fall back to "business"
+            style = llm_result.resolved_style or "business"
 
         return Classification(
             category=category,

@@ -1,13 +1,14 @@
-"""Rule-based pre-classifier — instant, free, no LLM needed.
+"""Rule-based automation detector — identifies machine-generated emails.
 
-Ported from bin/classify-phase-b with the same patterns and logic.
+CR-01: The rule tier only performs automation detection (blacklist, automated
+sender patterns, header inspection). All content-based classification is
+delegated to the LLM.
 """
 
 from __future__ import annotations
 
 import fnmatch
 import logging
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,65 +23,6 @@ class RuleResult:
     matched: bool  # True if a rule matched (skip LLM)
     is_automated: bool = False  # True if detected as automated/machine-sent
 
-
-# Payment request indicators
-PAYMENT_PATTERNS = [
-    r"invoice",
-    r"faktura",
-    r"faktúra",
-    r"payment",
-    r"platba",
-    r"zaplatit",
-    r"billing",
-    r"account.*due",
-    r"amount due",
-    r"total.*due",
-    r"please pay",
-    r"kč|czk|eur|usd|\$",
-    r"splatnost",
-    r"due date",
-]
-
-# Action required indicators
-ACTION_PATTERNS = [
-    r"please sign",
-    r"please approve",
-    r"approval required",
-    r"signature required",
-    r"please confirm",
-    r"action required",
-    r"urgent",
-    r"asap",
-    r"podep(sat|is|sán)|schvál(it|en)|potvrdi[tť]|vyžaduje (akci|vašu akci)",
-    # Meeting/appointment requests (EN + CS + DE)
-    r"meeting request",
-    r"calendar invite",
-    r"attend.*meeting",
-    r"schůzk[auyáě]",
-    r"setkání",
-    r"sejít se",
-    r"potkat se",
-    r"žádost o schůzku",
-    r"termin",
-    r"treffen",  # DE: appointment, meet
-]
-
-# Automated/FYI indicators
-FYI_PATTERNS = [
-    r"newsletter",
-    r"automated",
-    r"noreply",
-    r"no-reply",
-    r"notification",
-    r"alert",
-    r"unsubscribe",
-    r"this is an automated message",
-    r"do not reply",
-    r"system message",
-    r"mailer-daemon",
-    # "report" and "reminder" removed — too generic, cause false positives
-    # on legitimate emails like "can you send me the report?"
-]
 
 # Sender address patterns indicating automated/machine-generated email
 AUTOMATED_SENDER_PATTERNS = [
@@ -116,30 +58,6 @@ AUTOMATED_HEADERS = {
     "X-Autorespond": lambda _: True,
 }
 
-# Needs response indicators
-RESPONSE_PATTERNS = [
-    r"\?",  # Question mark
-    r"can you\s",
-    r"could you\s",
-    r"would you\s",
-    r"will you\s",
-    r"please\s+(let|send|provide|check|review)",
-    r"what.*think|your (opinion|thoughts|feedback)",
-    r"can i.*you",
-    r"do you.*think",
-    # Czech: question/request patterns
-    r"co si myslíš",
-    r"tvůj názor",
-    r"co se ti jeví",
-    r"mohl[ai]?\s+bys",
-    r"mohli\s+bychom",
-    r"můžeš",
-    r"můžete",
-    r"dej\s+mi\s+vědět",
-    r"ozvi\s+se",
-    r"napiš\s+mi",
-]
-
 
 def classify_by_rules(
     sender_email: str,
@@ -150,15 +68,13 @@ def classify_by_rules(
     headers: dict[str, str] | None = None,
 ) -> RuleResult:
     """
-    Tier 1: Deterministic rule-based classification.
+    Tier 1: Automation detection only.
 
-    Returns a result with matched=True if confident enough to skip LLM.
-    Returns matched=False if the email should go to LLM for classification.
+    Identifies machine-generated emails via blacklist, sender patterns, and
+    RFC headers. Returns is_automated=True for the safety net.
 
-    Automated emails (detected via sender patterns or email headers) are never
-    classified as needs_response — they skip draft generation.  They can still
-    be action_required or payment_request since those categories don't produce
-    drafts but do surface useful labels.
+    All content-based classification (payment, action, FYI, response patterns)
+    is delegated entirely to the LLM.
     """
     # Step 1: Blacklist check
     if _matches_blacklist(sender_email, blacklist):
@@ -184,45 +100,6 @@ def classify_by_rules(
 
     # Step 3: Header-based automation detection
     automated_by_headers, header_reason = _detect_automated_headers(headers or {})
-
-    # Step 4: Content-based patterns
-    content = f"{subject or ''} {snippet or ''} {body or ''}".lower()
-
-    # Payment patterns (high confidence) — still applies to automated emails
-    for pattern in PAYMENT_PATTERNS:
-        if re.search(pattern, content):
-            return RuleResult(
-                category="payment_request",
-                confidence="high",
-                reasoning=f"Payment pattern matched: {pattern}",
-                matched=True,
-                is_automated=automated_by_headers,
-            )
-
-    # Action patterns (high confidence) — still applies to automated emails
-    for pattern in ACTION_PATTERNS:
-        if re.search(pattern, content):
-            return RuleResult(
-                category="action_required",
-                confidence="high",
-                reasoning=f"Action pattern matched: {pattern}",
-                matched=True,
-                is_automated=automated_by_headers,
-            )
-
-    # FYI patterns (high confidence)
-    for pattern in FYI_PATTERNS:
-        if re.search(pattern, content):
-            return RuleResult(
-                category="fyi",
-                confidence="high",
-                reasoning=f"FYI pattern matched: {pattern}",
-                matched=True,
-                is_automated=automated_by_headers,
-            )
-
-    # Automated email detected via headers — no action/payment pattern matched,
-    # so classify as fyi to prevent draft generation.
     if automated_by_headers:
         return RuleResult(
             category="fyi",
@@ -232,21 +109,11 @@ def classify_by_rules(
             is_automated=True,
         )
 
-    # Response patterns — medium confidence, still pass to LLM for nuance
-    for pattern in RESPONSE_PATTERNS:
-        if re.search(pattern, content):
-            return RuleResult(
-                category="needs_response",
-                confidence="medium",
-                reasoning=f"Response pattern matched: {pattern}",
-                matched=False,  # Let LLM confirm
-            )
-
-    # No rule matched → LLM decides
+    # No automation detected → LLM decides everything
     return RuleResult(
-        category="fyi",
+        category="needs_response",
         confidence="low",
-        reasoning="No rule matched",
+        reasoning="No automation detected, passing to LLM",
         matched=False,
     )
 

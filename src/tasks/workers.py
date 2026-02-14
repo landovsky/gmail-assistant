@@ -71,7 +71,7 @@ class WorkerPool:
         self.labels_repo = LabelRepository(db)
         self.agent_runs = AgentRunRepository(db)
         self.sync_engine = SyncEngine(db, config.sync, router=router)
-        self.lifecycle = LifecycleManager(db, draft_engine)
+        self.lifecycle = LifecycleManager(db, draft_engine, context_gatherer)
         self._running = False
         self._concurrency = config.server.worker_concurrency
 
@@ -180,6 +180,7 @@ class WorkerPool:
             blacklist=settings.blacklist,
             contacts_config=contacts,
             headers=msg.headers,
+            style_config=settings.communication_styles,
             user_id=job.user_id,
             gmail_thread_id=msg.thread_id,
         )
