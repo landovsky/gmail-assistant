@@ -15,6 +15,11 @@ URL: `https://gmail.kopernici.cz`
 Namespace: `default`
 Deployment: `gmail-assistant-deployment`
 
+## Auth
+
+Admin API endpoints require HTTP Basic Auth. Read credentials from env vars `GMA_SERVER_ADMIN_USER` and `GMA_SERVER_ADMIN_PASSWORD`.
+Use: `curl -u "$GMA_SERVER_ADMIN_USER:$GMA_SERVER_ADMIN_PASSWORD"` for all `/api/` requests (except `/api/health`).
+
 ## Instructions
 
 **For `status`:**
@@ -25,7 +30,7 @@ Deployment: `gmail-assistant-deployment`
 
 **For `start`:**
 1. Set push endpoint: `CLOUDSDK_PYTHON=python3 gcloud pubsub subscriptions modify-push-config gmail-push-prod-sub --push-endpoint=https://gmail.kopernici.cz/webhook/gmail --project=gmail-mcp-server-support`
-2. Register Gmail watch: `curl -X POST https://gmail.kopernici.cz/admin/watch`
+2. Register Gmail watch: `curl -s -u "$GMA_SERVER_ADMIN_USER:$GMA_SERVER_ADMIN_PASSWORD" -X POST https://gmail.kopernici.cz/api/watch`
 3. Verify health: `curl -s https://gmail.kopernici.cz/api/health`
 4. Confirm everything is up
 
