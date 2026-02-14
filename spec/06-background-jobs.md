@@ -97,23 +97,26 @@ For PostgreSQL implementations, this should use `SELECT ... FOR UPDATE SKIP LOCK
 ```json
 {
   "message_id": "msg_abc123",
-  "thread_id": "thread_xyz789"
+  "thread_id": "thread_xyz789",
+  "force": false  // optional — when true, reclassifies even if already classified
 }
 ```
 
 **Processing:**
 1. Fetch message content from Gmail API
-2. Skip if thread already has a classification record in the database
+2. Skip if thread already has a classification record in the database (unless `force=true`)
 3. Load user settings (blacklist, contacts config)
 4. Run classification engine (rules + LLM)
-5. Apply classification label to the message in Gmail
-6. Store email record in database
+5. Apply classification label to the message in Gmail. On reclassification (`force=true`), the old classification label is removed and the new one added.
+6. Store email record in database (upsert)
 7. Log `classified` event
 8. If classified as `needs_response`: enqueue a `draft` job
+9. If classified as anything else: set status to `skipped`
+10. On reclassification away from `needs_response`: trash any dangling drafts
 
-**Side effects:** Gmail label change. Database insert (emails, email_events). May enqueue `draft` job. LLM API call logged.
+**Side effects:** Gmail label change. Database insert/update (emails, email_events). May enqueue `draft` job. May trash Gmail drafts. LLM API call logged.
 
-**Idempotency:** If thread already classified (exists in emails table), the job completes immediately without changes.
+**Idempotency:** If thread already classified (exists in emails table) and `force` is not set, the job completes immediately without changes.
 
 ---
 
@@ -298,7 +301,7 @@ On application shutdown:
 - **Action:** Enqueues a `sync` job with `force_full: true` for each active user
 - **Rationale:** The fallback sync is incremental — it only replays history since the last checkpoint. If emails slipped through during a watch outage or history gap, the incremental sync will never find them. The full sync scans `in:inbox newer_than:{days}d` (configurable via `GMA_SYNC_FULL_SYNC_DAYS`, default 10, production: 60) excluding already-labeled emails, so it catches anything the incremental sync missed.
 - **Payload:** `{"history_id": "", "force_full": true}`
-- **Idempotency:** Already-classified emails (those with any AI label) are excluded from the Gmail search query, and the classify handler skips threads that already have a DB record. Running this frequently is safe.
+- **Idempotency:** Three layers prevent duplicate processing: (1) already-labeled emails are excluded from the Gmail search query, (2) threads with an existing DB record are skipped, (3) threads with a pending/running classify job in the queue are skipped. Running this frequently is safe.
 
 ### Why two sync schedules?
 

@@ -276,7 +276,7 @@ Note: `email_events`, `llm_calls`, and `agent_runs` reference `emails` by `gmail
 
 Transitions:
 - `pending` → `drafted`: Draft created successfully
-- `pending` → `skipped`: Agent route, or rework limit exceeded
+- `pending` → `skipped`: Classified as anything other than `needs_response`, agent route, or rework limit exceeded
 - `pending` → `archived`: User marks Done before drafting
 - `drafted` → `sent`: Sent detection (draft disappeared from Gmail)
 - `drafted` → `rework_requested` → `drafted`: Rework cycle (back to drafted with new draft_id)

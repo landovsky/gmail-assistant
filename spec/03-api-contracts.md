@@ -2,7 +2,7 @@
 
 ## Overview
 
-The system exposes a JSON API for administration, webhook ingestion, and monitoring. There is **no authentication or authorization on any endpoint** — all endpoints are open. The system is designed to run on a private network or behind an authenticating reverse proxy.
+The system exposes a JSON API for administration, webhook ingestion, and monitoring. All endpoints are protected by HTTP Basic Auth when credentials are configured (see spec 08). A small set of paths are exempt from authentication (webhook, health, static assets).
 
 All responses use `Content-Type: application/json`. Error responses use standard HTTP status codes with a JSON body containing a `detail` field.
 
@@ -384,6 +384,77 @@ Get an inbox summary for a user.
 
 **Error responses:**
 - `404` — User with given email not found
+
+---
+
+## Debug API (prefix: /api)
+
+### GET /api/emails/{email_id}/debug
+
+Returns all debug data for a single email: the email record, related events, LLM calls, agent runs, a merged chronological timeline, and pre-computed summary statistics. Designed for programmatic / AI-assisted debugging.
+
+**Response (200):**
+```json
+{
+  "email": { ... },
+  "events": [ ... ],
+  "llm_calls": [ ... ],
+  "agent_runs": [ ... ],
+  "timeline": [ ... ],
+  "summary": { ... }
+}
+```
+
+**Error responses:**
+- `404` — Email not found
+
+---
+
+### GET /api/debug/emails
+
+List emails with search, filtering, and per-email debug counts.
+
+**Query parameters:**
+- `status` (optional) — Filter by email status
+- `classification` (optional) — Filter by classification
+- `q` (optional) — Full-text search across subject, snippet, reasoning, sender, thread ID, and email body content (via stored LLM call user_message)
+- `limit` (optional, default 50, max 500) — Maximum results
+
+**Response (200):**
+```json
+{
+  "count": 42,
+  "limit": 50,
+  "filters": { "status": null, "classification": null, "q": null },
+  "emails": [ { ... , "event_count": 5, "llm_call_count": 2, "agent_run_count": 0 } ]
+}
+```
+
+---
+
+### POST /api/emails/{email_id}/reclassify
+
+Force reclassification of an email. Enqueues a classify job with `force=True`, which bypasses the "already classified" check. On reclassification, the old classification label is swapped for the new one, and if the email moves away from `needs_response`, any dangling drafts are trashed.
+
+**Response (200):**
+```json
+{
+  "status": "queued",
+  "job_id": 123,
+  "email_id": 1,
+  "current_classification": "needs_response"
+}
+```
+
+**Error responses:**
+- `404` — Email not found
+- `400` — Email has no Gmail message ID
+
+---
+
+## Root URL
+
+`GET /` redirects to `/debug/emails` (the debug email list view).
 
 ---
 

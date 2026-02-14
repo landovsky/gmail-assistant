@@ -23,7 +23,7 @@ The rule tier's sole function is **automation detection** — it identifies mach
 |----------|---------|----------------|
 | `needs_response` | Direct question, personal request, social obligation to reply | Yes |
 | `action_required` | Meeting request, signature needed, approval, deadline task | No |
-| `payment_request` | Invoice, billing, amount due | No |
+| `payment_request` | Invoice, billing, amount due (unpaid only — payment confirmations classify as `fyi`) | No |
 | `fyi` | Newsletter, automated notification, CC'd thread, no action needed | No |
 | `waiting` | User sent the last message, awaiting reply | No |
 

@@ -4,11 +4,25 @@
 
 ### API Authentication
 
-**Current state:** No authentication is implemented on any API endpoint. All endpoints are open. The system is designed to run on a trusted network or behind an authenticating reverse proxy.
+HTTP Basic Auth is enforced on all routes via a pure ASGI middleware when credentials are configured. If `server.admin_user` or `server.admin_password` are empty, the middleware is not installed and all endpoints are open.
+
+**Public paths (exempt from auth):**
+- Prefix `/webhook/` — Pub/Sub push notifications
+- Prefix `/admin/statics/` — Admin UI static assets (CSS/JS)
+- Exact `/api/health` — Liveness probe
+
+All other paths require a valid `Authorization: Basic <base64>` header. Invalid or missing credentials receive a `401` response with a `WWW-Authenticate: Basic realm="Gmail Assistant"` header.
+
+**Configuration:**
+
+| Variable | Config Path | Purpose |
+|----------|-------------|---------|
+| `GMA_SERVER_ADMIN_USER` | server.admin_user | Basic auth username |
+| `GMA_SERVER_ADMIN_PASSWORD` | server.admin_password | Basic auth password |
 
 ### Authorization Model
 
-There is no role-based access control. All API operations are available to any caller. The admin dashboard is read-only by design but has no access restrictions.
+There is no role-based access control. All authenticated API operations are available to any valid caller. The admin dashboard is read-only by design.
 
 ### Google Authentication
 
@@ -89,6 +103,8 @@ server:
   webhook_secret: ""            # [UNCLEAR: not currently used for validation]
   log_level: info
   worker_concurrency: 3         # number of concurrent job workers
+  admin_user: ""                # Basic auth username (empty = auth disabled)
+  admin_password: ""            # Basic auth password (empty = auth disabled)
 
 # Email Routing
 routing:
@@ -140,6 +156,8 @@ All environment variables use the prefix `GMA_`. Nested config sections use addi
 | `GMA_SERVER_PORT` | server.port | `8000` |
 | `GMA_SERVER_LOG_LEVEL` | server.log_level | `info` |
 | `GMA_SERVER_WORKER_CONCURRENCY` | server.worker_concurrency | `3` |
+| `GMA_SERVER_ADMIN_USER` | server.admin_user | `admin` |
+| `GMA_SERVER_ADMIN_PASSWORD` | server.admin_password | `secret` |
 | `GMA_SYNC_PUBSUB_TOPIC` | sync.pubsub_topic | `projects/x/topics/y` |
 | `GMA_ENVIRONMENT` | environment | `development` |
 | `GMA_SENTRY_DSN` | sentry_dsn | `https://...@sentry.io/...` |
