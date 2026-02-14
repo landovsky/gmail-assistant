@@ -117,6 +117,9 @@ async def trigger_sync(user_id: int = 1, full: bool = False) -> dict:
     Set full=true to clear sync state first, forcing a full inbox scan.
     """
     db = get_db()
+    user = UserRepository(db).get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found. Run POST /api/auth/init first.")
     if full:
         SyncStateRepository(db).delete(user_id)
         logger.info("Cleared sync state for user %d to force full sync", user_id)

@@ -59,8 +59,8 @@ cases:
     body: "Please sign the attached NDA and return it by Friday."
 
   - id: ar-03
-    description: "German appointment request (borderline — LLM sees as needs_response)"
-    expected_category: needs_response
+    description: "German appointment request — rules say meeting requests → action_required"
+    expected_category: action_required
     sender_email: "hans.mueller@kunde.de"
     sender_name: "Hans Müller"
     subject: "Termin nächste Woche"
