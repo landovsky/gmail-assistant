@@ -280,6 +280,12 @@ class EmailRepository:
             (user_id, thread_id),
         )
 
+    def get_by_message(self, user_id: int, message_id: str) -> dict[str, Any] | None:
+        return self.db.execute_one(
+            "SELECT * FROM emails WHERE user_id = ? AND gmail_message_id = ?",
+            (user_id, message_id),
+        )
+
     def get_pending_drafts(self, user_id: int) -> list[dict[str, Any]]:
         return self.db.execute(
             """SELECT * FROM emails

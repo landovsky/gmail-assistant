@@ -333,6 +333,17 @@ class WorkerPool:
         action = job.payload.get("action", "")
         thread_id = job.payload.get("thread_id", "")
 
+        # For check_sent, thread_id may not be in the payload (deletion records
+        # only have message_id). Resolve from DB.
+        if not thread_id and action == "check_sent":
+            message_id = job.payload.get("message_id", "")
+            if message_id:
+                email = await asyncio.to_thread(
+                    self.emails.get_by_message, job.user_id, message_id
+                )
+                if email:
+                    thread_id = email["gmail_thread_id"]
+
         if action == "done" and thread_id:
             await asyncio.to_thread(
                 self.lifecycle.handle_done, job.user_id, thread_id, gmail_client

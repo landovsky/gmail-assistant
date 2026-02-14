@@ -474,6 +474,44 @@ class TestHandleCleanup:
         pool.lifecycle.handle_done.assert_not_called()
         pool.lifecycle.handle_sent_detection.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_check_sent_resolves_thread_id_from_db(self):
+        """check_sent payloads lack thread_id — worker should resolve from DB."""
+        from src.tasks.workers import WorkerPool
+
+        pool = _make_worker()
+        job = MagicMock()
+        job.user_id = 1
+        job.payload = {"action": "check_sent", "message_id": "msg_1"}  # No thread_id
+        gmail = MagicMock()
+
+        pool.emails.get_by_message.return_value = {
+            "gmail_thread_id": "thread_1",
+            "draft_id": "draft_1",
+        }
+
+        await WorkerPool._handle_cleanup(pool, job, gmail)
+
+        pool.emails.get_by_message.assert_called_once_with(1, "msg_1")
+        pool.lifecycle.handle_sent_detection.assert_called_once_with(1, "thread_1", gmail)
+
+    @pytest.mark.asyncio
+    async def test_check_sent_no_db_record_skips(self):
+        """check_sent with no thread_id and no DB record should skip."""
+        from src.tasks.workers import WorkerPool
+
+        pool = _make_worker()
+        job = MagicMock()
+        job.user_id = 1
+        job.payload = {"action": "check_sent", "message_id": "msg_unknown"}
+        gmail = MagicMock()
+
+        pool.emails.get_by_message.return_value = None
+
+        await WorkerPool._handle_cleanup(pool, job, gmail)
+
+        pool.lifecycle.handle_sent_detection.assert_not_called()
+
 
 # ===========================================================================
 # WorkerPool._handle_classify
