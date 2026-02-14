@@ -200,15 +200,10 @@ class WorkerPool:
                 old_label = label_ids.get(old_classification)
                 if old_label:
                     remove_labels.append(old_label)
-            if remove_labels:
-                await asyncio.to_thread(
-                    gmail_client.modify_labels, message_id,
-                    add=[label_id], remove=remove_labels,
-                )
-            else:
-                await asyncio.to_thread(
-                    gmail_client.modify_labels, message_id, add=[label_id],
-                )
+            await asyncio.to_thread(
+                gmail_client.modify_labels, message_id,
+                add=[label_id], remove=remove_labels,
+            )
 
         # Store in DB
         record = EmailRecord(
@@ -239,6 +234,17 @@ class WorkerPool:
             "classified",
             event_detail,
         )
+
+        # On reclassification away from needs_response, trash dangling drafts
+        if force and old_classification == "needs_response" and result.category != "needs_response":
+            trashed = await asyncio.to_thread(
+                gmail_client.trash_thread_drafts, msg.thread_id,
+            )
+            if trashed:
+                await asyncio.to_thread(
+                    self.events.log, job.user_id, msg.thread_id,
+                    "draft_trashed", f"Trashed {trashed} draft(s) after reclassification",
+                )
 
         # Queue draft if needs_response, otherwise mark as skipped
         if result.category == "needs_response":
