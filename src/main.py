@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 import sentry_sdk
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 from src.admin.setup import setup_admin
 from src.api.admin import router as admin_router
@@ -151,6 +152,16 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.state.config = config
     app.state.db = db
 
+    # Basic auth middleware (disabled when credentials not configured)
+    if config.server.admin_user and config.server.admin_password:
+        from src.middleware import BasicAuthMiddleware
+
+        app.add_middleware(
+            BasicAuthMiddleware,
+            username=config.server.admin_user,
+            password=config.server.admin_password,
+        )
+
     # Register routes
     app.include_router(webhook_router)
     app.include_router(admin_router)
@@ -159,6 +170,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     # Mount admin UI
     setup_admin(app, str(config.database.sqlite_path), debug=is_dev)
+
+    @app.get("/")
+    async def root():
+        return RedirectResponse(url="/admin/")
 
     return app
 
