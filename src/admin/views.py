@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from markupsafe import Markup
 from sqladmin import ModelView
 
 from src.admin.models import (
@@ -120,6 +121,11 @@ class EmailAdmin(ModelView, model=EmailModel):
         "confidence",
         "received_at",
     ]
+    column_formatters = {
+        "id": lambda m, _: Markup(
+            f'<a href="/debug/email/{m.id}" title="Open debug view">#{m.id} 🔍</a>'
+        ),
+    }
     column_searchable_list = ["subject", "sender_email", "gmail_thread_id"]
     column_sortable_list = [
         "id",
