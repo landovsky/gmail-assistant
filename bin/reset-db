@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: reset-db --env=<production|dev>"
+  echo ""
+  echo "Clears all transient data (jobs, emails, email_events, sync_state)"
+  echo "while preserving user accounts, labels, and settings."
+  exit 1
+}
+
+ENV=""
+for arg in "$@"; do
+  case "$arg" in
+    --env=*) ENV="${arg#--env=}" ;;
+    *) usage ;;
+  esac
+done
+
+case "$ENV" in
+  dev)
+    URL="http://localhost:8000"
+    ;;
+  production)
+    URL="https://gmail.kopernici.cz"
+    : "${GMA_SERVER_ADMIN_USER:?Set GMA_SERVER_ADMIN_USER in your environment}"
+    : "${GMA_SERVER_ADMIN_PASSWORD:?Set GMA_SERVER_ADMIN_PASSWORD in your environment}"
+
+    echo "⚠️  You are about to wipe the PRODUCTION database."
+    echo "   This will delete all emails, jobs, events, and sync state."
+    echo ""
+    read -r -p "Type 'yes' to confirm: " confirm
+    if [ "$confirm" != "yes" ]; then
+      echo "Aborted."
+      exit 1
+    fi
+    ;;
+  *)
+    usage
+    ;;
+esac
+
+AUTH_FLAG=()
+if [ "$ENV" = "production" ]; then
+  AUTH_FLAG=(-u "$GMA_SERVER_ADMIN_USER:$GMA_SERVER_ADMIN_PASSWORD")
+fi
+
+echo "Resetting $ENV database..."
+response=$(curl -s -w "\n%{http_code}" "${AUTH_FLAG[@]}" -X POST "$URL/api/reset")
+http_code=$(echo "$response" | tail -1)
+body=$(echo "$response" | sed '$d')
+
+if [ "$http_code" = "200" ]; then
+  echo "Done. Deleted rows:"
+  echo "$body" | python3 -m json.tool
+else
+  echo "Error (HTTP $http_code): $body"
+  exit 1
+fi
