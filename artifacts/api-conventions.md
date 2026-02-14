@@ -27,6 +27,32 @@ GET    /api/users/{user_id}/emails               # List emails (filter: status, 
 GET    /api/briefing/{user_email}               # Inbox summary grouped by classification
 ```
 
+### Debug — Email Investigation (JSON API)
+```
+GET    /api/debug/emails                         # List emails with search/filter + debug counts
+GET    /api/emails/{email_id}/debug              # Full debug data for a single email
+```
+
+**`GET /api/debug/emails`** — List emails with per-email event/LLM/agent counts.
+- `?status=pending` — filter by status
+- `?classification=needs_response` — filter by classification
+- `?q=search+term` — full-text search across subject, snippet, reasoning, sender, thread ID, and email body (via LLM call content)
+- `?limit=50` — max results (1–500, default 50)
+
+**`GET /api/emails/{email_id}/debug`** — All debug data for one email:
+- `email` — full email record
+- `events` — all audit events for the thread
+- `llm_calls` — all LLM API calls (classify, draft, rework, agent) with full prompts/responses
+- `agent_runs` — agent execution records with tool call logs
+- `timeline` — merged chronological view of events + LLM calls + agent runs
+- `summary` — pre-computed stats (token totals, latency, error count, LLM breakdown by call type)
+
+### Debug — Email Investigation (HTML UI)
+```
+GET    /debug/emails                             # Searchable email list (links to debug pages)
+GET    /debug/email/{email_id}                   # Unified single-email debug page
+```
+
 ## Route Organization
 
 ```python
@@ -51,6 +77,7 @@ Routes registered in `src/main.py`:
 app.include_router(webhook_router)
 app.include_router(admin_router)
 app.include_router(briefing_router)
+app.include_router(debug_router)
 ```
 
 ## Patterns

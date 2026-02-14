@@ -41,22 +41,102 @@ def _get_email_debug_data(email_id: int) -> dict:
     }
 
 
-@router.get("/api/emails/{email_id}/debug")
-async def email_debug_api(email_id: int) -> dict:
-    """JSON API: all debug data for an email."""
-    return _get_email_debug_data(email_id)
+def _build_timeline(events: list[dict], llm_calls: list[dict], agent_runs: list[dict]) -> list:
+    """Merge events, LLM calls, and agent runs into a single chronological timeline."""
+    items = []
+    for ev in events:
+        items.append(
+            {
+                "time": ev.get("created_at"),
+                "type": "event",
+                "event_type": ev.get("event_type"),
+                "detail": ev.get("detail"),
+                "label_id": ev.get("label_id"),
+                "draft_id": ev.get("draft_id"),
+                "source_id": ev.get("id"),
+            }
+        )
+    for lc in llm_calls:
+        items.append(
+            {
+                "time": lc.get("created_at"),
+                "type": "llm_call",
+                "call_type": lc.get("call_type"),
+                "model": lc.get("model"),
+                "total_tokens": lc.get("total_tokens", 0),
+                "latency_ms": lc.get("latency_ms", 0),
+                "error": lc.get("error"),
+                "source_id": lc.get("id"),
+            }
+        )
+    for ar in agent_runs:
+        items.append(
+            {
+                "time": ar.get("created_at"),
+                "type": "agent_run",
+                "profile": ar.get("profile"),
+                "status": ar.get("status"),
+                "iterations": ar.get("iterations", 0),
+                "error": ar.get("error"),
+                "completed_at": ar.get("completed_at"),
+                "source_id": ar.get("id"),
+            }
+        )
+    items.sort(key=lambda x: x.get("time") or "")
+    return items
 
 
-@router.get("/debug/emails", response_class=HTMLResponse)
-async def email_list_page(
-    status: str | None = None,
-    classification: str | None = None,
-    q: str | None = None,
-) -> HTMLResponse:
-    """Email list page with links to debug views."""
-    db = get_db()
+def _build_summary(
+    email: dict, events: list[dict], llm_calls: list[dict], agent_runs: list[dict]
+) -> dict:
+    """Pre-compute summary statistics for AI consumption."""
+    total_tokens = sum(c.get("total_tokens", 0) for c in llm_calls)
+    total_latency = sum(c.get("latency_ms", 0) for c in llm_calls)
+    errors = [e for e in events if e.get("event_type") == "error"]
+    llm_errors = [c for c in llm_calls if c.get("error")]
+    agent_errors = [r for r in agent_runs if r.get("status") == "error"]
 
-    conditions = []
+    call_types: dict = {}
+    for c in llm_calls:
+        ct = c.get("call_type", "unknown")
+        if ct not in call_types:
+            call_types[ct] = {"count": 0, "tokens": 0, "latency_ms": 0}
+        call_types[ct]["count"] += 1
+        call_types[ct]["tokens"] += c.get("total_tokens", 0)
+        call_types[ct]["latency_ms"] += c.get("latency_ms", 0)
+
+    return {
+        "email_id": email.get("id"),
+        "gmail_thread_id": email.get("gmail_thread_id"),
+        "classification": email.get("classification"),
+        "status": email.get("status"),
+        "event_count": len(events),
+        "llm_call_count": len(llm_calls),
+        "agent_run_count": len(agent_runs),
+        "total_tokens": total_tokens,
+        "total_latency_ms": total_latency,
+        "error_count": len(errors) + len(llm_errors) + len(agent_errors),
+        "errors": {
+            "events": [{"id": e.get("id"), "detail": e.get("detail")} for e in errors],
+            "llm_calls": [
+                {"id": c.get("id"), "call_type": c.get("call_type"), "error": c.get("error")}
+                for c in llm_errors
+            ],
+            "agent_runs": [
+                {"id": r.get("id"), "profile": r.get("profile"), "error": r.get("error")}
+                for r in agent_errors
+            ],
+        },
+        "llm_breakdown": call_types,
+        "rework_count": email.get("rework_count", 0),
+    }
+
+
+def _build_email_list_filters(
+    status: str | None, classification: str | None, q: str | None
+) -> tuple[list[str], list]:
+    """Build WHERE conditions and params for the email list query."""
+    conditions: list[str] = []
     params: list = []
 
     if status:
@@ -83,6 +163,97 @@ async def email_list_page(
         like = f"%{q}%"
         params.extend([like, like, like, like, like, like])
 
+    return conditions, params
+
+
+# ---------------------------------------------------------------------------
+# JSON API endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/emails/{email_id}/debug")
+async def email_debug_api(email_id: int) -> dict:
+    """JSON API: all debug data for an email.
+
+    Returns the email record, related events, LLM calls, agent runs,
+    a merged chronological timeline, and pre-computed summary statistics.
+    Designed for programmatic / AI-assisted debugging.
+    """
+    data = _get_email_debug_data(email_id)
+    data["timeline"] = _build_timeline(data["events"], data["llm_calls"], data["agent_runs"])
+    data["summary"] = _build_summary(
+        data["email"], data["events"], data["llm_calls"], data["agent_runs"]
+    )
+    return data
+
+
+@router.get("/api/debug/emails")
+async def email_list_api(
+    status: str | None = None,
+    classification: str | None = None,
+    q: str | None = None,
+    limit: int = 50,
+) -> dict:
+    """JSON API: list emails with search, filter, and per-email debug counts.
+
+    Query params:
+        status: Filter by email status (pending, drafted, sent, etc.)
+        classification: Filter by classification (needs_response, fyi, etc.)
+        q: Full-text search across subject, snippet, reasoning, sender,
+           thread ID, and email body content (via LLM call user_message)
+        limit: Max results (default 50, max 500)
+    """
+    db = get_db()
+    limit = min(max(limit, 1), 500)
+
+    conditions, params = _build_email_list_filters(status, classification, q)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    emails = db.execute(
+        f"""SELECT e.*, u.email as user_email,
+                   (SELECT COUNT(*) FROM email_events ev
+                    WHERE ev.gmail_thread_id = e.gmail_thread_id
+                      AND ev.user_id = e.user_id) as event_count,
+                   (SELECT COUNT(*) FROM llm_calls lc
+                    WHERE lc.gmail_thread_id = e.gmail_thread_id) as llm_call_count,
+                   (SELECT COUNT(*) FROM agent_runs ar
+                    WHERE ar.gmail_thread_id = e.gmail_thread_id
+                      AND ar.user_id = e.user_id) as agent_run_count
+            FROM emails e
+            LEFT JOIN users u ON u.id = e.user_id
+            {where}
+            ORDER BY e.id DESC
+            LIMIT ?""",
+        (*params, limit),
+    )
+
+    return {
+        "count": len(emails),
+        "limit": limit,
+        "filters": {
+            "status": status,
+            "classification": classification,
+            "q": q,
+        },
+        "emails": [dict(em) for em in emails],
+    }
+
+
+# ---------------------------------------------------------------------------
+# HTML pages
+# ---------------------------------------------------------------------------
+
+
+@router.get("/debug/emails", response_class=HTMLResponse)
+async def email_list_page(
+    status: str | None = None,
+    classification: str | None = None,
+    q: str | None = None,
+) -> HTMLResponse:
+    """Email list page with links to debug views."""
+    db = get_db()
+
+    conditions, params = _build_email_list_filters(status, classification, q)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     emails = db.execute(
