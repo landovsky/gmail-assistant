@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 
 from src.db.connection import get_db
-from src.db.models import AgentRunRepository, EventRepository, LLMCallRepository
+from src.db.models import AgentRunRepository, EventRepository, JobRepository, LLMCallRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -236,6 +236,36 @@ async def email_list_api(
             "q": q,
         },
         "emails": [dict(em) for em in emails],
+    }
+
+
+@router.post("/api/emails/{email_id}/reclassify")
+async def reclassify_email(email_id: int) -> dict:
+    """Force reclassification of an email by enqueuing a classify job with force=True."""
+    db = get_db()
+    email = db.execute_one("SELECT * FROM emails WHERE id = ?", (email_id,))
+    if not email:
+        raise HTTPException(status_code=404, detail=f"Email {email_id} not found")
+
+    message_id = email["gmail_message_id"]
+    if not message_id:
+        raise HTTPException(status_code=400, detail="Email has no Gmail message ID")
+
+    jobs = JobRepository(db)
+    job_id = jobs.enqueue(
+        "classify",
+        email["user_id"],
+        {"message_id": message_id, "force": True},
+    )
+
+    logger.info("Enqueued reclassify job %d for email %d (thread %s)",
+                job_id, email_id, email["gmail_thread_id"])
+
+    return {
+        "status": "queued",
+        "job_id": job_id,
+        "email_id": email_id,
+        "current_classification": email["classification"],
     }
 
 
@@ -470,6 +500,24 @@ async function triggerFullSync() {
     alert('Full sync queued successfully!');
   } catch (err) {
     alert('Failed to trigger sync: ' + err.message);
+  }
+}
+async function reclassifyEmail(emailId) {
+  if (!confirm('Force reclassification of this email? This will re-run the LLM classifier.')) return;
+  var btn = document.getElementById('reclassify-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Queued…'; }
+  try {
+    var res = await fetch('/api/emails/' + emailId + '/reclassify', {method: 'POST'});
+    var data = await res.json();
+    if (res.ok) {
+      alert('Reclassify job queued (job #' + data.job_id + '). Refresh the page to see results.');
+    } else {
+      alert('Failed: ' + (data.detail || 'unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = 'Reclassify'; }
+    }
+  } catch (err) {
+    alert('Failed to trigger reclassification: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Reclassify'; }
   }
 }
 document.addEventListener('keydown', function(e) {
@@ -745,6 +793,8 @@ def _render_debug_page(data: dict) -> str:
   <a href="/debug/emails">← All Emails</a>
   <a href="/admin">SQLAdmin</a>
   <button onclick="triggerFullSync()">Full Sync</button>
+  <button id="reclassify-btn" onclick="reclassifyEmail({eid})"
+    style="background:var(--purple)">Reclassify</button>
   <span style="margin-left:auto; display:flex; gap:12px">{prev_link} {next_link}</span>
 </div>
 <div class="container">
