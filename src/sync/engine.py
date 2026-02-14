@@ -56,9 +56,14 @@ class SyncEngine:
         user_id: int,
         gmail_client: UserGmailClient,
         notified_history_id: str | None = None,
+        force_full: bool = False,
     ) -> SyncResult:
         """Process all changes since last known historyId."""
         result = SyncResult()
+
+        if force_full:
+            logger.info("Forced full sync for user %d", user_id)
+            return self.full_sync(user_id, gmail_client)
 
         state = self.sync_state.get(user_id)
         if not state:

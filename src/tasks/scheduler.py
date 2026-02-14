@@ -37,8 +37,9 @@ class Scheduler:
         self._tasks = [
             asyncio.create_task(self._watch_renewal_loop()),
             asyncio.create_task(self._fallback_sync_loop()),
+            asyncio.create_task(self._full_sync_loop()),
         ]
-        logger.info("Scheduler started (watch renewal + fallback sync)")
+        logger.info("Scheduler started (watch renewal + fallback sync + full sync)")
         await asyncio.gather(*self._tasks)
 
     def stop(self) -> None:
@@ -82,6 +83,16 @@ class Scheduler:
             else:
                 logger.warning("Watch renewal failed for %s", email)
 
+    async def _full_sync_loop(self) -> None:
+        """Run a full inbox scan periodically to catch emails missed during watch outages."""
+        interval = self.config.sync.full_sync_interval_hours * 3600
+        while self._running:
+            await asyncio.sleep(interval)
+            try:
+                await self._enqueue_full_syncs()
+            except Exception:
+                logger.exception("Full sync scheduling failed")
+
     async def _enqueue_fallback_syncs(self) -> None:
         """Enqueue a sync job for each active user."""
         users = await asyncio.to_thread(UserRepository(self.db).get_active_users)
@@ -90,3 +101,14 @@ class Scheduler:
             await asyncio.to_thread(jobs.enqueue, "sync", user.id, {"history_id": ""})
         if users:
             logger.info("Fallback sync queued for %d user(s)", len(users))
+
+    async def _enqueue_full_syncs(self) -> None:
+        """Enqueue a full sync job for each active user."""
+        users = await asyncio.to_thread(UserRepository(self.db).get_active_users)
+        jobs = JobRepository(self.db)
+        for user in users:
+            await asyncio.to_thread(
+                jobs.enqueue, "sync", user.id, {"history_id": "", "force_full": True}
+            )
+        if users:
+            logger.info("Full sync queued for %d user(s)", len(users))

@@ -64,6 +64,7 @@ class LLMSettings(BaseSettings):
 class SyncConfig(BaseSettings):
     pubsub_topic: str = ""
     fallback_interval_minutes: int = 15
+    full_sync_interval_hours: int = 1
     history_max_results: int = 100
     full_sync_days: int = 10
 

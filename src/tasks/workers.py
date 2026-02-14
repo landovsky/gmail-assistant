@@ -146,7 +146,11 @@ class WorkerPool:
 
     async def _handle_sync(self, job: Any, gmail_client: UserGmailClient) -> None:
         history_id = job.payload.get("history_id")
-        await asyncio.to_thread(self.sync_engine.sync_user, job.user_id, gmail_client, history_id)
+        force_full = job.payload.get("force_full", False)
+        await asyncio.to_thread(
+            self.sync_engine.sync_user, job.user_id, gmail_client, history_id,
+            force_full=force_full,
+        )
 
     async def _handle_classify(self, job: Any, gmail_client: UserGmailClient) -> None:
         message_id = job.payload.get("message_id")
