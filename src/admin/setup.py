@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from sqladmin import Admin
 from sqlalchemy import create_engine
@@ -16,6 +18,9 @@ from src.admin.views import (
     UserLabelAdmin,
     UserSettingAdmin,
 )
+
+
+_TEMPLATES_DIR = str(Path(__file__).parent / "templates")
 
 
 def setup_admin(app: FastAPI, sqlite_path: str, *, debug: bool = False) -> Admin:
@@ -46,6 +51,7 @@ def setup_admin(app: FastAPI, sqlite_path: str, *, debug: bool = False) -> Admin
         engine,
         title="Gmail Assistant Admin",
         base_url="/admin",
+        templates_dir=_TEMPLATES_DIR,
         debug=debug,
     )
 

@@ -1,0 +1,105 @@
+{% extends "sqladmin/base.html" %}
+{% from 'sqladmin/_macros.html' import display_menu %}
+
+{% block head %}
+<style>
+  /* Prevent subject column from pushing table out of viewport */
+  .table td, .table th {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Let narrow columns stay narrow */
+  .table td:first-child, .table th:first-child {
+    max-width: none;
+    white-space: nowrap;
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="wrapper">
+  <aside class="navbar navbar-expand-lg navbar-vertical navbar-expand-md navbar-dark">
+    <div class="container-fluid">
+      <h1 class="navbar-brand navbar-brand-autodark">
+        <a href="{{ url_for('admin:index') }}">
+          {% if admin.logo_url %}
+          <img src="{{ admin.logo_url }}" width="64" height="64" alt="{{ admin.title }}" />
+          {% else %}
+          <h3>{{ admin.title }}</h3>
+          {% endif %}
+        </a>
+      </h1>
+      <nav class="navbar navbar-expand-sm shadow-none" id="navbar-menu">
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent"
+          aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarSupportedContent">
+          {{ display_menu(admin._menu, request) }}
+        </div>
+      </nav>
+      <div class="m-2">
+        <button id="fullSyncBtn" class="btn btn-warning btn-icon px-2" title="Trigger full sync for user 1">
+          <i class="fa-solid fa-sync me-1"></i>
+          <span>Full Sync</span>
+        </button>
+      </div>
+      {% if admin.authentication_backend %}
+      <a href="{{ request.url_for('admin:logout') }}" class="btn btn-secondary btn-icon m-2 px-2">
+        <span class="me-2">Logout</span>
+        <i class="fa fa-sign-out"></i>
+      </a>
+      {% endif %}
+    </div>
+  </aside>
+  <div class="page-wrapper">
+    <div class="container-fluid">
+      <div class="page-header d-print-none">
+        {% block content_header %}
+        <div class="row align-items-center">
+          <div class="col">
+            <h2 class="page-title">{{ title }}</h2>
+            <div class="page-pretitle">{{ subtitle }}</div>
+          </div>
+        </div>
+        {% endblock %}
+      </div>
+    </div>
+    <div class="page-body flex-grow-1">
+      <div class="container-fluid">
+        <div class="row row-deck row-cards">
+          {% block content %} {% endblock %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block tail %}
+<script>
+document.getElementById('fullSyncBtn').addEventListener('click', function() {
+  var btn = this;
+  btn.disabled = true;
+  btn.querySelector('span').textContent = 'Syncing...';
+  fetch('/api/sync?user_id=1&full=true', { method: 'POST' })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+      btn.querySelector('span').textContent = 'Queued!';
+      setTimeout(function() {
+        btn.disabled = false;
+        btn.querySelector('span').textContent = 'Full Sync';
+      }, 3000);
+    })
+    .catch(function(err) {
+      btn.querySelector('span').textContent = 'Error';
+      setTimeout(function() {
+        btn.disabled = false;
+        btn.querySelector('span').textContent = 'Full Sync';
+      }, 3000);
+    });
+});
+</script>
+{% endblock %}
