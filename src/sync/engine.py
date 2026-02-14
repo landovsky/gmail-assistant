@@ -120,7 +120,13 @@ class SyncEngine:
         messages = gmail_client.search(query, max_results=50)
 
         for msg in messages:
-            # Queue classification job
+            # Skip if already classified or job already queued
+            # (avoids duplicate jobs across overlapping full syncs)
+            if self.emails.get_by_thread(user_id, msg.thread_id):
+                continue
+            if self.jobs.has_pending_for_thread("classify", user_id, msg.thread_id):
+                continue
+
             self.jobs.enqueue("classify", user_id, {
                 "message_id": msg.id,
                 "thread_id": msg.thread_id,

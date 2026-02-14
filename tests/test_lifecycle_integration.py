@@ -943,3 +943,79 @@ class TestSyncEngineNewMessageDetection:
         engine._process_history_record(1, record, label_ids, result, set())
 
         engine.jobs.enqueue.assert_called_once()
+
+
+class TestFullSyncDeduplication:
+    """Full sync skips emails already classified or with pending jobs."""
+
+    def test_skips_already_classified_thread(self):
+        db = MagicMock()
+        engine = SyncEngine(db)
+        engine.jobs = MagicMock()
+        engine.labels_repo = MagicMock()
+        engine.labels_repo.get_labels.return_value = {}
+        engine.labels_repo.get_label_names.return_value = {}
+
+        msg = MagicMock()
+        msg.id = "msg_1"
+        msg.thread_id = "thread_1"
+
+        gmail = MagicMock()
+        gmail.search.return_value = [msg]
+
+        # Thread already in DB
+        engine.emails.get_by_thread = MagicMock(return_value={"id": 1})
+
+        result = engine.full_sync(1, gmail)
+
+        engine.jobs.enqueue.assert_not_called()
+        assert result.new_messages == 0
+
+    def test_skips_thread_with_pending_job(self):
+        db = MagicMock()
+        engine = SyncEngine(db)
+        engine.jobs = MagicMock()
+        engine.labels_repo = MagicMock()
+        engine.labels_repo.get_labels.return_value = {}
+        engine.labels_repo.get_label_names.return_value = {}
+
+        msg = MagicMock()
+        msg.id = "msg_1"
+        msg.thread_id = "thread_1"
+
+        gmail = MagicMock()
+        gmail.search.return_value = [msg]
+
+        # No DB record, but pending job exists
+        engine.emails.get_by_thread = MagicMock(return_value=None)
+        engine.jobs.has_pending_for_thread = MagicMock(return_value=True)
+
+        result = engine.full_sync(1, gmail)
+
+        engine.jobs.enqueue.assert_not_called()
+        assert result.new_messages == 0
+
+    def test_enqueues_when_no_record_and_no_pending_job(self):
+        db = MagicMock()
+        engine = SyncEngine(db)
+        engine.jobs = MagicMock()
+        engine.labels_repo = MagicMock()
+        engine.labels_repo.get_labels.return_value = {}
+        engine.labels_repo.get_label_names.return_value = {}
+
+        msg = MagicMock()
+        msg.id = "msg_1"
+        msg.thread_id = "thread_1"
+
+        gmail = MagicMock()
+        gmail.search.return_value = [msg]
+
+        engine.emails.get_by_thread = MagicMock(return_value=None)
+        engine.jobs.has_pending_for_thread = MagicMock(return_value=False)
+
+        result = engine.full_sync(1, gmail)
+
+        engine.jobs.enqueue.assert_called_once_with(
+            "classify", 1, {"message_id": "msg_1", "thread_id": "thread_1"}
+        )
+        assert result.new_messages == 1

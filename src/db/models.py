@@ -511,6 +511,17 @@ class JobRepository:
             (job_type, user_id, json.dumps(payload or {})),
         )
 
+    def has_pending_for_thread(self, job_type: str, user_id: int, thread_id: str) -> bool:
+        """Check if a pending/running job already exists for this thread."""
+        row = self.db.execute_one(
+            """SELECT 1 FROM jobs
+               WHERE job_type = ? AND user_id = ? AND status IN ('pending', 'running')
+                 AND json_extract(payload, '$.thread_id') = ?
+               LIMIT 1""",
+            (job_type, user_id, thread_id),
+        )
+        return row is not None
+
     def claim_next(self, job_type: str | None = None) -> Job | None:
         """Atomically claim the next pending job.
 
