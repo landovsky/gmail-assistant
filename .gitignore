@@ -1,5 +1,4 @@
 .env
 node_modules/
 data/
-.bundle/
-vendor/bundle/
+node_modules/
