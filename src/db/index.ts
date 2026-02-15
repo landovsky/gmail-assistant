@@ -21,4 +21,5 @@ export function getDb() {
   return db;
 }
 
-export { schema };
+// Export db instance for convenience
+export { db, schema };
