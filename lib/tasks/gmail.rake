@@ -28,46 +28,43 @@ namespace :gmail do
     end
     puts ""
 
-    total_affected = 0
+    all_message_ids = Set.new
     ai_label_ids.each do |label_id|
       begin
         response = gmail_client.list_messages(label_ids: [label_id], max_results: 500)
         messages = response.messages || []
         next if messages.empty?
 
-        total_affected += messages.size
+        msg_ids = messages.map(&:id)
+        all_message_ids.merge(msg_ids)
         puts "#{label_names[label_id] || label_id}: #{messages.size} messages"
 
         messages.first(5).each do |msg_ref|
           begin
             message = gmail_client.get_message(msg_ref.id, format: "metadata")
             parsed = Gmail::MessageParser.parse(message)
-            puts "  - #{parsed[:subject]&.truncate(60)} (#{msg_ref.id})"
+            puts "  - #{parsed[:subject]&.truncate(60)}"
           rescue StandardError
             puts "  - Message #{msg_ref.id}"
           end
         end
         puts "  ..." if messages.size > 5
-
-        if mode == "delete"
-          messages.each do |msg_ref|
-            gmail_client.modify_message_labels(
-              msg_ref.id,
-              remove_label_ids: ai_label_ids
-            )
-          end
-          puts "  \e[32mLabels removed.\e[0m"
-        end
       rescue Gmail::Client::GmailApiError => e
         puts "\e[31m  Error for label #{label_id}: #{e.message}\e[0m"
       end
     end
 
     puts ""
-    if mode == "delete"
-      puts "\e[32mCleaned #{total_affected} messages.\e[0m"
+    if all_message_ids.empty?
+      puts "\e[32mNo messages with AI labels found.\e[0m"
+    elsif mode == "delete"
+      gmail_client.batch_modify_message_labels(
+        all_message_ids.to_a,
+        remove_label_ids: ai_label_ids
+      )
+      puts "\e[32mCleaned #{all_message_ids.size} messages (batch API).\e[0m"
     else
-      puts "#{total_affected} messages would be affected."
+      puts "#{all_message_ids.size} unique messages would be affected."
       puts "\e[33mRun with mode=delete to apply: rake gmail:cleanup_labels[#{user.id},delete]\e[0m"
     end
   end

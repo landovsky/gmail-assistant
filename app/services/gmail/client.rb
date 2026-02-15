@@ -71,6 +71,17 @@ module Gmail
       raise GmailApiError, "Failed to create label '#{name}': #{e.message}"
     end
 
+    def batch_modify_message_labels(message_ids, add_label_ids: [], remove_label_ids: [])
+      request = Google::Apis::GmailV1::BatchModifyMessagesRequest.new(
+        ids: message_ids,
+        add_label_ids: add_label_ids,
+        remove_label_ids: remove_label_ids
+      )
+      @service.batch_modify_messages("me", request)
+    rescue Google::Apis::ClientError => e
+      raise GmailApiError, "Failed to batch modify labels: #{e.message}"
+    end
+
     def modify_message_labels(message_id, add_label_ids: [], remove_label_ids: [])
       request = Google::Apis::GmailV1::ModifyMessageRequest.new(
         add_label_ids: add_label_ids,
