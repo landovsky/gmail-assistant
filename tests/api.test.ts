@@ -1,18 +1,19 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
 import { app } from '../src/api/app';
 
 describe('API Health Check', () => {
   it('should return ok status', async () => {
     const res = await app.request('/api/health');
-    expect(res.status).toBe(200);
+    assert.strictEqual(res.status, 200);
 
     const data = await res.json();
-    expect(data).toEqual({ status: 'ok' });
+    assert.deepStrictEqual(data, { status: 'ok' });
   });
 
   it('should redirect root to debug page', async () => {
     const res = await app.request('/');
-    expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/debug/emails');
+    assert.strictEqual(res.status, 302);
+    assert.strictEqual(res.headers.get('location'), '/debug/emails');
   });
 });

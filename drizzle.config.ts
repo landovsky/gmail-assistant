@@ -1,10 +1,10 @@
-import type { Config } from 'drizzle-kit';
+import type { Config } from "drizzle-kit";
 
 export default {
-  schema: './src/db/schema.ts',
-  out: './drizzle',
-  dialect: 'sqlite',
+  schema: "./src/db/schema.ts",
+  out: "./drizzle",
+  dialect: "sqlite",
   dbCredentials: {
-    url: process.env.DATABASE_URL || './data/gmail-assistant.db',
+    url: process.env.DATABASE_URL || "./data/gmail-assistant.db",
   },
 } satisfies Config;
