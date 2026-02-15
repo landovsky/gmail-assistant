@@ -1,0 +1,58 @@
+<% content_for(:title) { "Email List" } %>
+
+<form action="/debug/emails" method="get" class="filters">
+  <input type="text" name="q" value="<%= @filters[:q] %>" placeholder="Search subject, body, sender, thread ID...">
+  <select name="status">
+    <option value="">All statuses</option>
+    <% Email::STATUSES.each do |s| %>
+      <option value="<%= s %>" <%= 'selected' if @filters[:status] == s %>><%= s %></option>
+    <% end %>
+  </select>
+  <select name="classification">
+    <option value="">All classifications</option>
+    <% Email::CLASSIFICATIONS.each do |c| %>
+      <option value="<%= c %>" <%= 'selected' if @filters[:classification] == c %>><%= c %></option>
+    <% end %>
+  </select>
+  <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+  <a href="/debug/emails" class="btn btn-sm">Reset</a>
+</form>
+
+<div class="card">
+  <% if @emails.any? %>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>User</th>
+          <th>Subject</th>
+          <th>Sender</th>
+          <th>Classification</th>
+          <th>Status</th>
+          <th>Confidence</th>
+          <th>Events</th>
+          <th>LLM</th>
+          <th>Received</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @emails.each do |email| %>
+          <tr>
+            <td><a href="/debug/email/<%= email.id %>"><%= email.id %></a></td>
+            <td class="text-muted"><%= email.user.email %></td>
+            <td class="text-truncate"><a href="/debug/email/<%= email.id %>"><%= truncate(email.subject || "(no subject)", length: 60) %></a></td>
+            <td class="text-truncate"><%= email.sender_email %></td>
+            <td><span class="badge badge-<%= email.classification %>"><%= email.classification %></span></td>
+            <td><span class="badge badge-<%= email.status %>"><%= email.status %></span></td>
+            <td><span class="badge badge-<%= email.confidence %>"><%= email.confidence %></span></td>
+            <td class="text-muted"><%= EmailEvent.where(user_id: email.user_id, gmail_thread_id: email.gmail_thread_id).count %></td>
+            <td class="text-muted"><%= LlmCall.where(user_id: email.user_id, gmail_thread_id: email.gmail_thread_id).count %></td>
+            <td class="text-muted"><%= email.received_at&.strftime("%Y-%m-%d %H:%M") %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% else %>
+    <div class="empty">No emails found.</div>
+  <% end %>
+</div>

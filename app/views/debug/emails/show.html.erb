@@ -1,0 +1,225 @@
+<% content_for(:title) { "Email ##{@email.id}" } %>
+<% content_for(:nav_actions) do %>
+  <button class="btn btn-purple btn-sm" onclick="reclassifyEmail(<%= @email.id %>)">Reclassify</button>
+  <% if @prev_email %>
+    <a href="/debug/email/<%= @prev_email.id %>" class="btn btn-sm">&larr; prev</a>
+  <% end %>
+  <% if @next_email %>
+    <a href="/debug/email/<%= @next_email.id %>" class="btn btn-sm">next &rarr;</a>
+  <% end %>
+<% end %>
+
+<!-- Email Metadata -->
+<div class="card">
+  <h2 style="font-size: 18px; margin-bottom: 8px;"><%= @email.subject || "(no subject)" %></h2>
+  <div style="color: var(--text-secondary); margin-bottom: 8px;">
+    <%= @email.sender_name %> &lt;<%= @email.sender_email %>&gt;
+  </div>
+  <div style="margin-bottom: 12px;">
+    <code style="color: var(--text-muted); font-size: 11px;">Thread: <%= @email.gmail_thread_id %></code>
+    &nbsp;
+    <code style="color: var(--text-muted); font-size: 11px;">Message: <%= @email.gmail_message_id %></code>
+  </div>
+
+  <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
+    <span class="badge badge-<%= @email.classification %>"><%= @email.classification %></span>
+    <span class="badge badge-<%= @email.status %>"><%= @email.status %></span>
+    <span class="badge badge-<%= @email.confidence %>"><%= @email.confidence %></span>
+    <span class="badge" style="background: var(--border); color: var(--text-secondary);"><%= @email.message_count %> msg</span>
+    <span class="badge" style="background: var(--border); color: var(--text-secondary);"><%= @email.resolved_style %></span>
+    <span class="badge" style="background: var(--border); color: var(--text-secondary);"><%= @email.detected_language %></span>
+  </div>
+
+  <div class="grid grid-4">
+    <div><div class="meta-label">Received</div><div class="meta-value"><%= @email.received_at&.strftime("%Y-%m-%d %H:%M:%S") || "-" %></div></div>
+    <div><div class="meta-label">Processed</div><div class="meta-value"><%= @email.processed_at&.strftime("%Y-%m-%d %H:%M:%S") || "-" %></div></div>
+    <div><div class="meta-label">Drafted</div><div class="meta-value"><%= @email.drafted_at&.strftime("%Y-%m-%d %H:%M:%S") || "-" %></div></div>
+    <div><div class="meta-label">Acted</div><div class="meta-value"><%= @email.acted_at&.strftime("%Y-%m-%d %H:%M:%S") || "-" %></div></div>
+    <div><div class="meta-label">Draft ID</div><div class="meta-value mono"><%= @email.draft_id || "-" %></div></div>
+    <div><div class="meta-label">Rework Count</div><div class="meta-value"><%= @email.rework_count %></div></div>
+    <div><div class="meta-label">Vendor</div><div class="meta-value"><%= @email.vendor_name || "-" %></div></div>
+    <div><div class="meta-label">DB ID</div><div class="meta-value"><%= @email.id %></div></div>
+  </div>
+
+  <% if @email.reasoning.present? %>
+    <div style="margin-top: 16px;">
+      <div class="meta-label">Reasoning</div>
+      <div class="reasoning-box"><%= @email.reasoning %></div>
+    </div>
+  <% end %>
+
+  <% if @email.last_rework_instruction.present? %>
+    <div style="margin-top: 12px;">
+      <div class="meta-label">Last Rework Instruction</div>
+      <div class="reasoning-box"><%= @email.last_rework_instruction %></div>
+    </div>
+  <% end %>
+
+  <% if @email.snippet.present? %>
+    <div style="margin-top: 12px;">
+      <div class="meta-label">Snippet</div>
+      <div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;"><%= @email.snippet %></div>
+    </div>
+  <% end %>
+</div>
+
+<!-- Timeline -->
+<div class="card">
+  <div class="card-header">
+    Timeline
+    <span class="count-badge"><%= @timeline.size %></span>
+  </div>
+  <% if @timeline.any? %>
+    <div class="timeline">
+      <% @timeline.each do |entry| %>
+        <div class="timeline-entry">
+          <div class="timeline-time"><%= entry[:timestamp].strftime("%H:%M:%S") %></div>
+          <div class="timeline-dot">
+            <% dot_class = case entry[:type]; when :event then 'dot-event'; when :llm_call then 'dot-llm'; when :agent_run then 'dot-agent'; end %>
+            <span class="<%= dot_class %>"></span>
+          </div>
+          <div class="timeline-content">
+            <% case entry[:type] %>
+            <% when :event %>
+              <span class="badge badge-<%= entry[:event_type] %>"><%= entry[:event_type] %></span>
+              <div class="detail"><%= entry[:detail] %></div>
+              <% if entry[:label_id].present? %><div class="detail">Label: <%= entry[:label_id] %></div><% end %>
+            <% when :llm_call %>
+              <span class="badge badge-<%= entry[:call_type] %>"><%= entry[:call_type] %></span>
+              <span style="color: var(--text-muted);"><%= entry[:model] %></span>
+              <div class="detail">
+                Tokens: <%= entry[:prompt_tokens] %>/<%= entry[:completion_tokens] %>/<%= entry[:total_tokens] %>
+                &middot; <%= entry[:latency_ms] %>ms
+                <% unless entry[:success] %><span class="text-error"> &middot; ERROR</span><% end %>
+              </div>
+            <% when :agent_run %>
+              <span class="badge badge-agent"><%= entry[:profile] %></span>
+              <span class="badge badge-<%= entry[:status] %>"><%= entry[:status] %></span>
+              <div class="detail"><%= entry[:iterations] %> iterations</div>
+              <% if entry[:error].present? %><div class="detail text-error"><%= entry[:error] %></div><% end %>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  <% else %>
+    <div class="empty">No timeline entries.</div>
+  <% end %>
+</div>
+
+<!-- Events -->
+<div class="card">
+  <div class="card-header">
+    Events
+    <span class="count-badge"><%= @events.size %></span>
+  </div>
+  <% if @events.any? %>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Type</th><th>Detail</th><th>Label</th><th>Draft</th><th>Time</th></tr>
+      </thead>
+      <tbody>
+        <% @events.each do |event| %>
+          <tr>
+            <td><%= event.id %></td>
+            <td><span class="badge badge-<%= event.event_type %>"><%= event.event_type %></span></td>
+            <td><%= event.detail %></td>
+            <td class="text-muted mono"><%= event.label_id %></td>
+            <td class="text-muted mono"><%= event.draft_id %></td>
+            <td class="text-muted"><%= event.created_at.strftime("%Y-%m-%d %H:%M:%S") %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% else %>
+    <div class="empty">No events recorded.</div>
+  <% end %>
+</div>
+
+<!-- LLM Calls -->
+<div class="card">
+  <div class="card-header">
+    LLM Calls
+    <span class="count-badge"><%= @llm_calls.size %></span>
+  </div>
+  <% if @llm_calls.any? %>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Type</th><th>Model</th><th>Prompt</th><th>Compl.</th><th>Total</th><th>Latency</th><th>Error</th><th>Time</th><th>Prompts / Response</th></tr>
+      </thead>
+      <tbody>
+        <% @llm_calls.each_with_index do |call, idx| %>
+          <tr>
+            <td><%= call.id %></td>
+            <td><span class="badge badge-<%= call.call_type %>"><%= call.call_type %></span></td>
+            <td class="mono"><%= call.model %></td>
+            <td><%= call.prompt_tokens %></td>
+            <td><%= call.completion_tokens %></td>
+            <td><%= call.total_tokens %></td>
+            <td><%= call.latency_ms %>ms</td>
+            <td class="text-error"><%= call.error %></td>
+            <td class="text-muted"><%= call.created_at.strftime("%H:%M:%S") %></td>
+            <td>
+              <button class="btn btn-sm" onclick="toggleAll('llm<%= idx %>-', true)">Expand all</button>
+              <button class="btn btn-sm" onclick="toggleAll('llm<%= idx %>-', false)">Collapse all</button>
+              <div style="margin-top: 6px;">
+                <% if call.system_prompt.present? %>
+                  <span class="expandable-toggle" onclick="toggle('llm<%= idx %>-system')">&#9656; system</span>
+                  <div id="llm<%= idx %>-system" class="expandable-content"><%= call.system_prompt %></div>
+                <% end %>
+                <% if call.user_message.present? %>
+                  <span class="expandable-toggle" onclick="toggle('llm<%= idx %>-user')">&#9656; user</span>
+                  <div id="llm<%= idx %>-user" class="expandable-content"><%= call.user_message %></div>
+                <% end %>
+                <% if call.response_text.present? %>
+                  <span class="expandable-toggle" onclick="toggle('llm<%= idx %>-response')">&#9656; response</span>
+                  <div id="llm<%= idx %>-response" class="expandable-content"><%= call.response_text %></div>
+                <% end %>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% else %>
+    <div class="empty">No LLM calls recorded.</div>
+  <% end %>
+</div>
+
+<!-- Agent Runs -->
+<div class="card">
+  <div class="card-header">
+    Agent Runs
+    <span class="count-badge"><%= @agent_runs.size %></span>
+  </div>
+  <% if @agent_runs.any? %>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Profile</th><th>Status</th><th>Iterations</th><th>Error</th><th>Started</th><th>Completed</th><th>Details</th></tr>
+      </thead>
+      <tbody>
+        <% @agent_runs.each_with_index do |run, idx| %>
+          <tr>
+            <td><%= run.id %></td>
+            <td><%= run.profile %></td>
+            <td><span class="badge badge-<%= run.status %>"><%= run.status %></span></td>
+            <td><%= run.iterations %></td>
+            <td class="text-error"><%= run.error %></td>
+            <td class="text-muted"><%= run.created_at.strftime("%H:%M:%S") %></td>
+            <td class="text-muted"><%= run.completed_at&.strftime("%H:%M:%S") || "-" %></td>
+            <td>
+              <span class="expandable-toggle" onclick="toggle('agent<%= idx %>-tools')">&#9656; tool calls</span>
+              <div id="agent<%= idx %>-tools" class="expandable-content"><%= JSON.pretty_generate(run.parsed_tool_calls) rescue run.tool_calls_log %></div>
+              <% if run.final_message.present? %>
+                <span class="expandable-toggle" onclick="toggle('agent<%= idx %>-msg')">&#9656; final message</span>
+                <div id="agent<%= idx %>-msg" class="expandable-content"><%= run.final_message %></div>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% else %>
+    <div class="empty">No agent runs recorded.</div>
+  <% end %>
+</div>

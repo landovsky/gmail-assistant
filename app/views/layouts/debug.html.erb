@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= yield(:title) || "Email Debug" %> - Gmail Assistant</title>
+  <style>
+    :root {
+      --bg-primary: #0f1117;
+      --bg-card: #1a1d27;
+      --bg-hover: #252833;
+      --bg-input: #252833;
+      --text-primary: #e1e4eb;
+      --text-secondary: #8b8fa3;
+      --text-muted: #5a5e72;
+      --border: #2d3042;
+      --accent-blue: #4a9eff;
+      --accent-purple: #a855f7;
+      --accent-green: #22c55e;
+      --accent-yellow: #eab308;
+      --accent-orange: #f97316;
+      --accent-cyan: #06b6d4;
+      --accent-red: #ef4444;
+      --accent-gray: #6b7280;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    a { color: var(--accent-blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Nav */
+    .nav { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--bg-card); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+    .nav-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+    .nav-link { color: var(--text-secondary); font-size: 13px; }
+    .nav-link:hover { color: var(--text-primary); }
+    .nav-spacer { flex: 1; }
+    .nav-actions { display: flex; gap: 8px; align-items: center; }
+
+    /* Buttons */
+    .btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); cursor: pointer; font-family: inherit; font-size: 12px; }
+    .btn:hover { background: var(--bg-hover); }
+    .btn-primary { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-purple { background: var(--accent-purple); border-color: var(--accent-purple); color: #fff; }
+    .btn-purple:hover { opacity: 0.9; }
+    .btn-sm { padding: 4px 10px; font-size: 11px; }
+
+    /* Badges */
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-needs_response { background: rgba(74,158,255,0.15); color: var(--accent-blue); }
+    .badge-action_required { background: rgba(168,85,247,0.15); color: var(--accent-purple); }
+    .badge-payment_request { background: rgba(249,115,22,0.15); color: var(--accent-orange); }
+    .badge-fyi { background: rgba(107,114,128,0.15); color: var(--accent-gray); }
+    .badge-waiting { background: rgba(6,182,212,0.15); color: var(--accent-cyan); }
+    .badge-pending { background: rgba(234,179,8,0.15); color: var(--accent-yellow); }
+    .badge-drafted { background: rgba(74,158,255,0.15); color: var(--accent-blue); }
+    .badge-rework_requested { background: rgba(249,115,22,0.15); color: var(--accent-orange); }
+    .badge-sent { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+    .badge-skipped { background: rgba(107,114,128,0.15); color: var(--accent-gray); }
+    .badge-archived { background: rgba(107,114,128,0.15); color: var(--accent-gray); }
+    .badge-high { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+    .badge-medium { background: rgba(234,179,8,0.15); color: var(--accent-yellow); }
+    .badge-low { background: rgba(249,115,22,0.15); color: var(--accent-orange); }
+    .badge-classify, .badge-draft, .badge-rework, .badge-context, .badge-agent { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-classify { background: rgba(168,85,247,0.15); color: var(--accent-purple); }
+    .badge-draft { background: rgba(74,158,255,0.15); color: var(--accent-blue); }
+    .badge-rework { background: rgba(249,115,22,0.15); color: var(--accent-orange); }
+    .badge-context { background: rgba(6,182,212,0.15); color: var(--accent-cyan); }
+    .badge-agent { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+    .badge-running { background: rgba(234,179,8,0.15); color: var(--accent-yellow); }
+    .badge-completed { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+    .badge-error { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+    .badge-max_iterations { background: rgba(249,115,22,0.15); color: var(--accent-orange); }
+
+    /* Card */
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 16px 20px; }
+    .card-header { font-size: 14px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .count-badge { background: var(--border); padding: 2px 8px; border-radius: 10px; font-size: 11px; color: var(--text-secondary); }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 8px 10px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+    td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:hover td { background: var(--bg-hover); }
+    .text-muted { color: var(--text-muted); }
+    .text-error { color: var(--accent-red); }
+    .text-truncate { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mono { font-family: inherit; font-size: 12px; }
+
+    /* Filters */
+    .filters { display: flex; gap: 10px; align-items: center; padding: 12px 20px; background: var(--bg-card); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .filters input, .filters select { background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; color: var(--text-primary); font-family: inherit; font-size: 13px; }
+    .filters input { flex: 1; min-width: 200px; }
+    .filters select { min-width: 140px; }
+    .filters input:focus, .filters select:focus { outline: none; border-color: var(--accent-blue); }
+
+    /* Empty state */
+    .empty { text-align: center; padding: 40px; color: var(--text-muted); }
+
+    /* Expandable */
+    .expandable-toggle { cursor: pointer; color: var(--accent-blue); user-select: none; }
+    .expandable-toggle:hover { text-decoration: underline; }
+    .expandable-content { display: none; margin-top: 8px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 10px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; color: var(--text-secondary); }
+    .expandable-content.show { display: block; }
+
+    /* Content area */
+    .content { padding: 0; }
+
+    /* Grid */
+    .grid { display: grid; gap: 12px; }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+    @media (max-width: 768px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+
+    /* Metadata */
+    .meta-label { color: var(--text-muted); font-size: 11px; text-transform: uppercase; margin-bottom: 2px; }
+    .meta-value { color: var(--text-primary); font-size: 13px; }
+
+    /* Timeline */
+    .timeline { position: relative; padding-left: 0; }
+    .timeline-entry { display: grid; grid-template-columns: 90px 28px 1fr; gap: 0; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .timeline-time { text-align: right; color: var(--text-muted); font-size: 12px; padding-top: 2px; }
+    .timeline-dot { display: flex; justify-content: center; align-items: flex-start; padding-top: 5px; }
+    .timeline-dot span { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot-event { background: var(--accent-green); }
+    .dot-llm { background: var(--accent-purple); }
+    .dot-agent { background: var(--accent-cyan); }
+    .timeline-content { font-size: 13px; }
+    .timeline-content .detail { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+
+    /* Reasoning box */
+    .reasoning-box { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin-top: 8px; white-space: pre-wrap; color: var(--text-secondary); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <span class="nav-title">Email Debug</span>
+    <a href="/debug/emails" class="nav-link">All Emails</a>
+    <span class="nav-spacer"></span>
+    <div class="nav-actions">
+      <%= yield(:nav_actions) %>
+      <button class="btn btn-sm" onclick="triggerFullSync()">Full Sync</button>
+    </div>
+  </nav>
+  <div class="content">
+    <%= yield %>
+  </div>
+  <script>
+    function toggle(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('show');
+    }
+    function toggleAll(prefix, expand) {
+      document.querySelectorAll('[id^="' + prefix + '"]').forEach(function(el) {
+        if (expand) el.classList.add('show');
+        else el.classList.remove('show');
+      });
+    }
+    function triggerFullSync() {
+      if (!confirm('Trigger full inbox sync? This will re-process all recent emails.')) return;
+      fetch('/api/sync?full=true', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { alert('Sync queued for user ' + d.user_id); })
+        .catch(function(e) { alert('Sync failed: ' + e.message); });
+    }
+    function reclassifyEmail(emailId) {
+      if (!confirm('Reclassify this email? This will re-run the LLM classifier.')) return;
+      var btn = event.target;
+      btn.disabled = true;
+      btn.textContent = 'Queued...';
+      fetch('/api/emails/' + emailId + '/reclassify', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { alert('Reclassification queued: Job #' + d.job_id); })
+        .catch(function(e) { alert('Failed: ' + e.message); btn.disabled = false; btn.textContent = 'Reclassify'; });
+    }
+  </script>
+</body>
+</html>
