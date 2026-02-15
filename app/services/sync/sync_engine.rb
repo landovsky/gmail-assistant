@@ -128,19 +128,25 @@ module Sync
     end
 
     def enqueue_classification(parsed_data)
+      payload = {
+        gmail_thread_id: parsed_data[:gmail_thread_id],
+        gmail_message_id: parsed_data[:gmail_message_id],
+        sender_email: parsed_data[:sender_email],
+        sender_name: parsed_data[:sender_name],
+        subject: parsed_data[:subject],
+        snippet: parsed_data[:snippet],
+        received_at: parsed_data[:received_at]&.iso8601
+      }
+
+      # Record in internal job table for tracking
       Job.enqueue(
         job_type: "classify",
         user: @user,
-        payload: {
-          gmail_thread_id: parsed_data[:gmail_thread_id],
-          gmail_message_id: parsed_data[:gmail_message_id],
-          sender_email: parsed_data[:sender_email],
-          sender_name: parsed_data[:sender_name],
-          subject: parsed_data[:subject],
-          snippet: parsed_data[:snippet],
-          received_at: parsed_data[:received_at]&.iso8601
-        }
+        payload: payload
       )
+
+      # Dispatch to Sidekiq for actual processing
+      ClassifyJob.perform_later(@user.id, payload.stringify_keys)
     end
 
     def process_label_added(label_change)
