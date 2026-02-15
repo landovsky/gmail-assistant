@@ -1,6 +1,6 @@
 import { appConfig } from "../config/index.js";
 import { getJobQueue } from "./queue/index.js";
-import { getJobHandler } from "./handlers/index.js";
+import { getJobHandler, initializeHandlers } from "./handlers/index.js";
 import type { Job } from "./types.js";
 
 export class WorkerPool {
@@ -15,6 +15,10 @@ export class WorkerPool {
 
     this.running = true;
     const workerCount = appConfig.queue.workers;
+
+    // Initialize handlers with queue instance
+    const queue = getJobQueue();
+    initializeHandlers(queue);
 
     console.log(`Starting worker pool with ${workerCount} workers`);
 
