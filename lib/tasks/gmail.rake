@@ -152,11 +152,14 @@ def extract_draft_body(draft)
   payload = message.payload
   return nil unless payload
 
-  if payload.body&.data
-    Base64.urlsafe_decode64(payload.body.data)
+  # Note: Google API gem auto-decodes base64 body data, so .data is already UTF-8
+  if payload.body&.data.present?
+    payload.body.data.force_encoding("UTF-8")
   elsif payload.parts
     text_part = payload.parts.find { |p| p.mime_type == "text/plain" }
-    text_part&.body&.data ? Base64.urlsafe_decode64(text_part.body.data) : nil
+    html_part = payload.parts.find { |p| p.mime_type == "text/html" }
+    part = text_part || html_part
+    part&.body&.data.present? ? part.body.data.force_encoding("UTF-8") : nil
   end
 rescue StandardError
   nil
