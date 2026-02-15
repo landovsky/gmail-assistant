@@ -1,0 +1,21 @@
+server:
+  host: "0.0.0.0"
+  port: 3000
+  workers: 1
+
+database:
+  url: "data/gmail-assistant.db"
+
+jobQueue:
+  type: sqlite
+
+auth: {}
+
+llm:
+  classificationModel: "google/gemini-2.0-flash-exp"
+  draftModel: "anthropic/claude-3-7-sonnet-20250219"
+  contextModel: "google/gemini-2.0-flash-exp"
+
+gmail:
+  credentialsPath: "credentials.json"
+  tokenPath: "token.json"
