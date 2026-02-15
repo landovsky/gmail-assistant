@@ -27,6 +27,9 @@ gem "dotenv-rails"
 # JSON serialization
 gem "oj"
 
+# WEBrick for OAuth callback server (removed from Ruby 3.0+ stdlib)
+gem "webrick"
+
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 gem "bcrypt", "~> 3.1.7"
 
