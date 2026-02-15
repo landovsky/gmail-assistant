@@ -3,8 +3,36 @@
 require "rails_helper"
 
 RSpec.describe LlmGateway do
-  let(:gateway) { described_class.new(base_url: "http://localhost:4000") }
+  let(:gateway) { described_class.new }
   let(:user) { create(:user) }
+
+  # Mock RubyLLM response object
+  let(:mock_response) do
+    double("RubyLLM::Message",
+           content: '{"category": "needs_response"}',
+           text: '{"category": "needs_response"}',
+           usage: {
+             prompt_tokens: 100,
+             completion_tokens: 50,
+             total_tokens: 150
+           },
+           finish_reason: "stop",
+           tool_calls: nil)
+  end
+
+  let(:mock_chat) do
+    double("RubyLLM::Chat").tap do |chat|
+      allow(chat).to receive(:with_instructions).and_return(chat)
+      allow(chat).to receive(:with_temperature).and_return(chat)
+      allow(chat).to receive(:with_max_tokens).and_return(chat)
+      allow(chat).to receive(:with_params).and_return(chat)
+      allow(chat).to receive(:send_message).and_return(mock_response)
+    end
+  end
+
+  before do
+    allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+  end
 
   describe "#chat" do
     let(:messages) do
@@ -14,34 +42,9 @@ RSpec.describe LlmGateway do
       ]
     end
 
-    let(:success_response) do
-      {
-        "choices" => [
-          {
-            "message" => { "content" => '{"category": "needs_response"}' },
-            "finish_reason" => "stop"
-          }
-        ],
-        "usage" => {
-          "prompt_tokens" => 100,
-          "completion_tokens" => 50,
-          "total_tokens" => 150
-        }
-      }
-    end
-
-    before do
-      stub_request(:post, "http://localhost:4000/v1/chat/completions")
-        .to_return(
-          status: 200,
-          body: success_response.to_json,
-          headers: { "Content-Type" => "application/json" }
-        )
-    end
-
     it "makes a successful API call and returns parsed response" do
       result = gateway.chat(
-        model: "gemini/gemini-2.0-flash",
+        model: "gemini-2.0-flash",
         messages: messages,
         user: user,
         call_type: "classify"
@@ -52,10 +55,44 @@ RSpec.describe LlmGateway do
       expect(result[:completion_tokens]).to eq(50)
     end
 
+    it "strips provider prefix from model name" do
+      gateway.chat(
+        model: "gemini/gemini-2.0-flash",
+        messages: messages,
+        user: user,
+        call_type: "classify"
+      )
+
+      expect(RubyLLM).to have_received(:chat).with(model: "gemini-2.0-flash")
+    end
+
+    it "sets system prompt via with_instructions" do
+      gateway.chat(
+        model: "gemini-2.0-flash",
+        messages: messages,
+        user: user,
+        call_type: "classify"
+      )
+
+      expect(mock_chat).to have_received(:with_instructions).with("You are a classifier.")
+    end
+
+    it "sets temperature" do
+      gateway.chat(
+        model: "gemini-2.0-flash",
+        messages: messages,
+        temperature: 0.5,
+        user: user,
+        call_type: "classify"
+      )
+
+      expect(mock_chat).to have_received(:with_temperature).with(0.5)
+    end
+
     it "logs the call to LlmCall table" do
       expect do
         gateway.chat(
-          model: "gemini/gemini-2.0-flash",
+          model: "gemini-2.0-flash",
           messages: messages,
           user: user,
           call_type: "classify"
@@ -64,7 +101,7 @@ RSpec.describe LlmGateway do
 
       call = LlmCall.last
       expect(call.call_type).to eq("classify")
-      expect(call.model).to eq("gemini/gemini-2.0-flash")
+      expect(call.model).to eq("gemini-2.0-flash")
       expect(call.system_prompt).to eq("You are a classifier.")
       expect(call.user_message).to eq("Classify this email.")
       expect(call.prompt_tokens).to eq(100)
@@ -72,8 +109,9 @@ RSpec.describe LlmGateway do
 
     context "when rate limited" do
       before do
-        stub_request(:post, "http://localhost:4000/v1/chat/completions")
-          .to_return(status: 429, body: "Rate limit exceeded")
+        allow(mock_chat).to receive(:send_message).and_raise(
+          RubyLLM::RateLimitError.new("Rate limit exceeded")
+        )
       end
 
       it "raises RateLimitError and logs the failure" do
@@ -86,47 +124,37 @@ RSpec.describe LlmGateway do
       end
     end
 
-    context "when server error" do
+    context "when timeout" do
       before do
-        stub_request(:post, "http://localhost:4000/v1/chat/completions")
-          .to_return(status: 500, body: "Internal Server Error")
+        allow(mock_chat).to receive(:send_message).and_raise(
+          RubyLLM::TimeoutError.new("Request timeout")
+        )
       end
 
-      it "raises LlmError" do
+      it "raises TimeoutError" do
         expect do
           gateway.chat(model: "test", messages: messages, user: user, call_type: "classify")
-        end.to raise_error(LlmGateway::LlmError)
+        end.to raise_error(LlmGateway::TimeoutError)
       end
     end
 
-    context "when connection refused" do
+    context "when other RubyLLM error" do
       before do
-        stub_request(:post, "http://localhost:4000/v1/chat/completions")
-          .to_raise(Errno::ECONNREFUSED)
+        allow(mock_chat).to receive(:send_message).and_raise(
+          RubyLLM::Error.new("API error")
+        )
       end
 
       it "raises LlmError" do
         expect do
           gateway.chat(model: "test", messages: messages, user: user, call_type: "classify")
-        end.to raise_error(LlmGateway::LlmError, /connection refused/i)
+        end.to raise_error(LlmGateway::LlmError, /API error/)
       end
     end
   end
 
   describe "#chat_json" do
     let(:messages) { [{ role: "user", content: "test" }] }
-
-    before do
-      stub_request(:post, "http://localhost:4000/v1/chat/completions")
-        .to_return(
-          status: 200,
-          body: {
-            "choices" => [{ "message" => { "content" => '{"key": "value"}' }, "finish_reason" => "stop" }],
-            "usage" => { "prompt_tokens" => 10, "completion_tokens" => 5, "total_tokens" => 15 }
-          }.to_json,
-          headers: { "Content-Type" => "application/json" }
-        )
-    end
 
     it "returns parsed JSON response" do
       result = gateway.chat_json(
@@ -136,7 +164,18 @@ RSpec.describe LlmGateway do
         call_type: "classify"
       )
 
-      expect(result[:parsed_response]).to eq({ "key" => "value" })
+      expect(result[:parsed_response]).to eq({ "category" => "needs_response" })
+    end
+
+    it "sets JSON response format parameter" do
+      gateway.chat_json(
+        model: "test",
+        messages: messages,
+        user: user,
+        call_type: "classify"
+      )
+
+      expect(mock_chat).to have_received(:with_params).with(response_format: { type: "json_object" })
     end
   end
 end

@@ -9,9 +9,9 @@ database:
   backend: sqlite
 
 llm:
-  classify_model: gemini/gemini-2.0-flash
-  draft_model: gemini/gemini-2.5-pro
-  context_model: gemini/gemini-2.0-flash
+  classify_model: gemini-2.0-flash
+  draft_model: gemini-2.5-pro
+  context_model: gemini-2.0-flash
   max_classify_tokens: 256
   max_draft_tokens: 2048
 
