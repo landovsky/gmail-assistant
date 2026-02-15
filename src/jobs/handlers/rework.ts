@@ -65,21 +65,25 @@ export class ReworkHandler implements JobHandler {
     const reworked = await regenerateDraft({
       userId: email.userId,
       threadId: email.gmailThreadId,
+      subject: email.subject,
+      from: email.from,
+      body: email.body || "",
       draftId: email.draftId!,
-      communicationStyle: email.communicationStyle || "professional",
+      communicationStyle: email.communicationStyle || "business",
       language: email.language || "en",
       client,
     });
 
     // Create new Gmail draft
-    const draft = await client.createDraft({
-      threadId: email.gmailThreadId,
-      subject: `Re: ${email.subject}`,
-      body: reworked.body,
-      inReplyTo: email.gmailMessageId,
-    });
+    const draft = await client.createDraft(
+      email.gmailThreadId,
+      email.from, // to
+      `Re: ${email.subject}`,
+      reworked.body,
+      email.gmailMessageId
+    );
 
-    if (!draft.id) {
+    if (!draft.draftId) {
       throw new Error("Failed to create reworked draft - no draft ID returned");
     }
 
@@ -92,11 +96,11 @@ export class ReworkHandler implements JobHandler {
     await db
       .update(emails)
       .set({
-        draftId: draft.id,
+        draftId: draft.draftId,
         lastReworkInstruction: reworked.instruction,
       })
       .where(eq(emails.id, email.id));
 
-    console.log(`✓ Draft reworked for email ${payload.email_id}: new_draft_id=${draft.id}, instruction="${reworked.instruction}"`);
+    console.log(`✓ Draft reworked for email ${payload.email_id}: new_draft_id=${draft.draftId}, instruction="${reworked.instruction}"`);
   }
 }
