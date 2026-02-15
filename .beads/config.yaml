@@ -60,3 +60,4 @@ sync-branch: "beads-sync"
 # - linear.api-key
 # - github.org
 # - github.repono-db: true
+no-db: true
