@@ -99,6 +99,12 @@ module Gmail
       raise GmailApiError, "Failed to create draft: #{e.message}"
     end
 
+    def list_drafts(max_results: 100)
+      @service.list_user_drafts("me", max_results: max_results)
+    rescue Google::Apis::ClientError => e
+      raise GmailApiError, "Failed to list drafts: #{e.message}"
+    end
+
     def delete_draft(draft_id)
       @service.delete_user_draft("me", draft_id)
     rescue Google::Apis::ClientError => e

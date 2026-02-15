@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Delete AI-generated drafts (identified by rework marker ✂️).
+# Usage:
+#   bin/cleanup-drafts          # dry run, first user
+#   bin/cleanup-drafts 1        # dry run, user ID 1
+#   bin/cleanup-drafts 1 delete # actually delete drafts
+set -euo pipefail
+
+USER_ID="${1:-}"
+MODE="${2:-dry_run}"
+
+if [ "$USER_ID" = "" ]; then
+  bundle exec rake "gmail:cleanup_drafts[,${MODE}]"
+else
+  bundle exec rake "gmail:cleanup_drafts[${USER_ID},${MODE}]"
+fi

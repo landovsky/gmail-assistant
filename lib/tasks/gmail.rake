@@ -48,7 +48,7 @@ namespace :gmail do
 
         if mode == "delete"
           messages.each do |msg_ref|
-            gmail_client.modify_message(
+            gmail_client.modify_message_labels(
               msg_ref.id,
               remove_label_ids: ai_label_ids
             )
