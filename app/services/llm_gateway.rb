@@ -85,27 +85,22 @@ class LlmGateway
     model.to_s.sub(%r{^[^/]+/}, '')
   end
 
-  def make_ruby_llm_call(model, messages, max_tokens, temperature, response_format, tools)
-    # Create a new Chat instance
+  def make_ruby_llm_call(model, messages, max_tokens, temperature, response_format, tools) # rubocop:disable Metrics/ParameterLists
     chat = RubyLLM.chat(model: model)
 
-    # Extract and set system prompt
     system_prompt = extract_system_prompt(messages)
     chat = chat.with_instructions(system_prompt) if system_prompt.present?
-
-    # Set temperature
     chat = chat.with_temperature(temperature) if temperature
 
-    # Set provider params (max tokens, response format)
-    extra_params = {}
-    extra_params[:max_tokens] = max_tokens if max_tokens
-    extra_params[:response_format] = { type: 'json_object' } if response_format&.dig(:type) == 'json_object'
-    chat = chat.with_params(**extra_params) if extra_params.any?
+    # JSON mode: use RubyLLM's with_schema which handles provider differences
+    # (Gemini uses responseMimeType, OpenAI uses response_format)
+    chat = chat.with_schema({ type: 'object' }) if response_format&.dig(:type) == 'json_object'
 
-    # TODO: Tool calling support for agent framework
+    # Max tokens: translate to provider-native params via with_params
+    chat = chat.with_params(provider_max_tokens_params(model, max_tokens)) if max_tokens
+
     Rails.logger.warn('LlmGateway: tool calling not yet supported with RubyLLM, ignoring tools') if tools.present?
 
-    # Extract user messages and send
     user_messages = messages.select { |m| m[:role] == 'user' }
     raise LlmError, 'No user messages found' if user_messages.empty?
 
@@ -120,7 +115,10 @@ class LlmGateway
   end
 
   def parse_response(response)
-    content = response.content.to_s
+    # RubyLLM auto-parses JSON into a Hash when with_schema is used;
+    # convert back to JSON string for consistent return type
+    raw_content = response.content
+    content = raw_content.is_a?(Hash) ? raw_content.to_json : raw_content.to_s
 
     tool_calls = if response.respond_to?(:tool_calls) && response.tool_calls.present?
                    parse_tool_calls(response.tool_calls)
@@ -155,6 +153,20 @@ class LlmGateway
     end
   rescue JSON::ParserError
     nil
+  end
+
+  # Translate max_tokens to provider-native payload structure.
+  # RubyLLM's with_params deep-merges into the raw API payload,
+  # so we must use each provider's native field names.
+  def provider_max_tokens_params(model, max_tokens)
+    if model.to_s.match?(/gemini/i)
+      { generationConfig: { maxOutputTokens: max_tokens } }
+    elsif model.to_s.match?(/claude/i)
+      { max_tokens: max_tokens }
+    else
+      # OpenAI and compatible APIs
+      { max_completion_tokens: max_tokens }
+    end
   end
 
   def extract_system_prompt(messages)

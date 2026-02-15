@@ -20,6 +20,7 @@ RSpec.describe LlmGateway do
       allow(chat).to receive(:with_instructions).and_return(chat)
       allow(chat).to receive(:with_temperature).and_return(chat)
       allow(chat).to receive(:with_params).and_return(chat)
+      allow(chat).to receive(:with_schema).and_return(chat)
       allow(chat).to receive(:ask).and_return(mock_response)
     end
   end
@@ -162,7 +163,7 @@ RSpec.describe LlmGateway do
       expect(result[:parsed_response]).to eq({ 'category' => 'needs_response' })
     end
 
-    it 'sets JSON response format parameter' do
+    it 'uses with_schema for JSON mode' do
       gateway.chat_json(
         model: 'test',
         messages: messages,
@@ -170,7 +171,20 @@ RSpec.describe LlmGateway do
         call_type: 'classify'
       )
 
-      expect(mock_chat).to have_received(:with_params).with(response_format: { type: 'json_object' })
+      expect(mock_chat).to have_received(:with_schema).with({ type: 'object' })
+    end
+
+    it 'passes max_tokens via provider-native params' do
+      gateway.chat_json(
+        model: 'gemini-2.0-flash',
+        messages: messages,
+        max_tokens: 256,
+        user: user,
+        call_type: 'classify'
+      )
+
+      expect(mock_chat).to have_received(:with_params)
+        .with(generationConfig: { maxOutputTokens: 256 })
     end
   end
 end
