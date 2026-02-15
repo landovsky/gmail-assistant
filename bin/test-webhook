@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# Test Gmail webhook by publishing a message to Pub/Sub
+# Usage: bin/test-webhook [--env dev|production]
+
+set -e
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+ENV="dev"
+PROJECT_ID=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -e|--env)
+      ENV="$2"
+      shift 2
+      ;;
+    -p|--project)
+      PROJECT_ID="$2"
+      shift 2
+      ;;
+    -h|--help)
+      cat <<EOF
+${BLUE}Test Gmail Webhook${NC}
+
+${GREEN}Usage:${NC}
+  bin/test-webhook [--env <env>] [--project <project-id>]
+
+${GREEN}Options:${NC}
+  -e, --env <env>        Environment: dev or production (default: dev)
+  -p, --project <id>     Google Cloud project ID (auto-detected if not provided)
+  -h, --help             Show this help message
+
+${GREEN}Example:${NC}
+  bin/test-webhook --env dev
+
+${YELLOW}What this does:${NC}
+  Publishes a test message to your Pub/Sub topic, which triggers
+  the Gmail webhook endpoint. Check your Rails logs to see the
+  webhook notification being received.
+
+EOF
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+# Get project ID
+if [[ -z "$PROJECT_ID" ]]; then
+  PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+  if [[ -z "$PROJECT_ID" ]]; then
+    echo -e "${RED}Error: No Google Cloud project configured${NC}"
+    exit 1
+  fi
+fi
+
+TOPIC_NAME="gmail-notifications-${ENV}"
+
+echo -e "${BLUE}Testing Gmail Webhook${NC}"
+echo -e "Project: ${GREEN}${PROJECT_ID}${NC}"
+echo -e "Topic:   ${GREEN}${TOPIC_NAME}${NC}"
+echo ""
+
+# Create test message
+TEST_MESSAGE=$(cat <<EOF
+{
+  "emailAddress": "test@example.com",
+  "historyId": "$(date +%s)"
+}
+EOF
+)
+
+echo -e "${YELLOW}Publishing test message:${NC}"
+echo "$TEST_MESSAGE"
+echo ""
+
+# Publish message
+gcloud pubsub topics publish "$TOPIC_NAME" \
+  --message="$TEST_MESSAGE" \
+  --project="$PROJECT_ID"
+
+echo ""
+echo -e "${GREEN}✓ Test message published!${NC}"
+echo ""
+echo -e "${YELLOW}Check your Rails logs for:${NC}"
+echo "  - POST /webhook/gmail"
+echo "  - Webhook notification received"
+echo ""

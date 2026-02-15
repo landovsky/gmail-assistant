@@ -205,14 +205,49 @@ routing:
 
 ### Push Notifications (Optional)
 
-For real-time inbox monitoring:
+For real-time inbox monitoring with instant sync:
 
-1. Set up Google Cloud Pub/Sub
-2. Configure webhook URL and topic in `.env`
-3. Register watch:
+**Quick Setup (Development with ngrok):**
 
 ```bash
+# Terminal 1: Start ngrok tunnel
+bin/start-ngrok 3000
+
+# Terminal 2: Setup Google Cloud Pub/Sub (copy ngrok URL from Terminal 1)
+bin/setup-gcloud enable --url https://YOUR-NGROK-URL.ngrok-free.app
+
+# Register watch with Gmail
 curl -X POST http://localhost:3000/api/watch
+
+# Test the webhook (optional)
+bin/test-webhook
+```
+
+**Production Setup:**
+
+```bash
+# Setup with your production URL
+bin/setup-gcloud enable --url https://api.yourdomain.com --env production
+
+# Register watch
+curl -X POST https://api.yourdomain.com/api/watch
+```
+
+**What this does:**
+- Gmail sends push notifications when your inbox changes
+- System syncs immediately instead of polling every 15 minutes
+- Much faster email processing and classification
+
+**Helpers:**
+```bash
+# Check Pub/Sub status
+bin/setup-gcloud status
+
+# Disable push notifications
+bin/setup-gcloud disable
+
+# Test webhook is working
+bin/test-webhook
 ```
 
 ## Useful Commands
