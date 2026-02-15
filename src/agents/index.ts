@@ -3,24 +3,21 @@
  * Main entry point for agent system
  */
 
-export { ToolRegistry, toolRegistry } from "./tools/registry.js";
-export type { ToolDefinition, ToolHandler } from "./tools/registry.js";
+export { ToolRegistry, toolRegistry } from './tools/registry.js';
+export type { ToolDefinition, ToolHandler, ToolContext } from './tools/registry.js';
 
-export { registerCoreTools } from "./tools/core.js";
+import { registerCoreTools } from './tools/core.js';
+import { registerPharmacyTools } from './tools/pharmacy.js';
+export { registerCoreTools, registerPharmacyTools };
 
-export { AgentRouter } from "./router.js";
-export type {
-  EmailMetadata,
-  RoutingRule,
-  RouteDecision,
-  RoutingRuleMatch,
-} from "./router.js";
+export { AgentRouter } from './router.js';
+export type { EmailMetadata, RoutingRule, RouteDecision, RoutingRuleMatch } from './router.js';
 
-export { AgentExecutor } from "./executor.js";
-export type { AgentResult } from "./executor.js";
+export { AgentExecutor } from './executor.js';
+export type { AgentResult } from './executor.js';
 
-export { ProfileLoader, createDefaultProfileConfig } from "./profiles.js";
-export type { AgentProfile, ProfileConfig } from "./profiles.js";
+export { ProfileLoader, createDefaultProfileConfig } from './profiles.js';
+export type { AgentProfile, ProfileConfig } from './profiles.js';
 
 /**
  * Initialize agent framework
@@ -28,5 +25,5 @@ export type { AgentProfile, ProfileConfig } from "./profiles.js";
  */
 export function initializeAgents(): void {
   registerCoreTools();
-  // Additional initialization can be added here
+  registerPharmacyTools();
 }

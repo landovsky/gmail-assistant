@@ -36,12 +36,40 @@ export class MockGmailClient {
     return thread;
   }
 
+  async sendReply(
+    threadId: string,
+    to: string,
+    subject: string,
+    body: string,
+    inReplyTo?: string,
+    _references?: string
+  ) {
+    const messageId = `sent-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    const message = {
+      id: messageId,
+      threadId,
+      payload: {
+        headers: [
+          { name: 'To', value: to },
+          { name: 'Subject', value: subject },
+          { name: 'In-Reply-To', value: inReplyTo || '' },
+        ],
+        body: { data: Buffer.from(body).toString('base64') },
+      },
+    };
+
+    this.messages.set(messageId, message);
+    return { messageId };
+  }
+
   async createDraft(
     threadId: string,
     to: string,
     subject: string,
     body: string,
-    inReplyTo?: string
+    inReplyTo?: string,
+    references?: string
   ) {
     const draftId = `draft-${Date.now()}-${Math.random()}`;
     const messageId = `msg-${draftId}`;
@@ -83,13 +111,13 @@ export class MockGmailClient {
     const newLabels = [...currentLabels];
 
     if (modifications.addLabelIds) {
-      modifications.addLabelIds.forEach(id => {
+      modifications.addLabelIds.forEach((id) => {
         if (!newLabels.includes(id)) newLabels.push(id);
       });
     }
 
     if (modifications.removeLabelIds) {
-      modifications.removeLabelIds.forEach(id => {
+      modifications.removeLabelIds.forEach((id) => {
         const idx = newLabels.indexOf(id);
         if (idx !== -1) newLabels.splice(idx, 1);
       });
@@ -143,7 +171,7 @@ export class MockJobQueue implements JobQueue {
   }
 
   async claim(): Promise<Job | null> {
-    const job = this.jobs.find(j => j.status === 'pending');
+    const job = this.jobs.find((j) => j.status === 'pending');
     if (!job) return null;
 
     job.status = 'running';
@@ -152,7 +180,7 @@ export class MockJobQueue implements JobQueue {
   }
 
   async complete(jobId: number): Promise<void> {
-    const job = this.jobs.find(j => j.id === jobId);
+    const job = this.jobs.find((j) => j.id === jobId);
     if (job) {
       job.status = 'completed';
       job.completedAt = new Date().toISOString();
@@ -160,7 +188,7 @@ export class MockJobQueue implements JobQueue {
   }
 
   async fail(jobId: number, errorMessage: string): Promise<void> {
-    const job = this.jobs.find(j => j.id === jobId);
+    const job = this.jobs.find((j) => j.id === jobId);
     if (job) {
       job.status = 'failed';
       job.errorMessage = errorMessage;
@@ -169,7 +197,7 @@ export class MockJobQueue implements JobQueue {
   }
 
   async retry(jobId: number, errorMessage: string): Promise<void> {
-    const job = this.jobs.find(j => j.id === jobId);
+    const job = this.jobs.find((j) => j.id === jobId);
     if (job) {
       job.attempts++;
       job.status = 'pending';
@@ -181,22 +209,16 @@ export class MockJobQueue implements JobQueue {
   async cleanup(daysOld: number): Promise<number> {
     const cutoff = Date.now() - daysOld * 24 * 60 * 60 * 1000;
     const before = this.jobs.length;
-    this.jobs = this.jobs.filter(j => {
+    this.jobs = this.jobs.filter((j) => {
       if (!j.completedAt) return true;
       return new Date(j.completedAt).getTime() > cutoff;
     });
     return before - this.jobs.length;
   }
 
-  async hasPendingJob(
-    userId: number,
-    jobType: JobType,
-    threadId?: string
-  ): Promise<boolean> {
-    return this.jobs.some(j =>
-      j.userId === userId &&
-      j.jobType === jobType &&
-      j.status === 'pending'
+  async hasPendingJob(userId: number, jobType: JobType, threadId?: string): Promise<boolean> {
+    return this.jobs.some(
+      (j) => j.userId === userId && j.jobType === jobType && j.status === 'pending'
     );
   }
 
@@ -206,11 +228,11 @@ export class MockJobQueue implements JobQueue {
   }
 
   getPendingJobs(): Job[] {
-    return this.jobs.filter(j => j.status === 'pending');
+    return this.jobs.filter((j) => j.status === 'pending');
   }
 
   getCompletedJobs(): Job[] {
-    return this.jobs.filter(j => j.status === 'completed');
+    return this.jobs.filter((j) => j.status === 'completed');
   }
 
   clear() {

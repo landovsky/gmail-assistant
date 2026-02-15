@@ -10,10 +10,7 @@ const BASE_DELAY_MS = 1000;
  * Retry logic wrapper for Gmail API calls
  * Implements exponential backoff for transient errors
  */
-async function withRetry<T>(
-  operation: () => Promise<T>,
-  retries = MAX_RETRIES
-): Promise<T> {
+async function withRetry<T>(operation: () => Promise<T>, retries = MAX_RETRIES): Promise<T> {
   let lastError: Error | undefined;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -86,9 +83,7 @@ export class GmailClient {
    * Get user profile (email address and current historyId)
    */
   async getProfile(): Promise<{ email: string; historyId: string }> {
-    const response = await withRetry(() =>
-      this.gmail.users.getProfile({ userId: this.userId })
-    );
+    const response = await withRetry(() => this.gmail.users.getProfile({ userId: this.userId }));
 
     if (!response.data.emailAddress || !response.data.historyId) {
       throw new Error('Failed to get user profile from Gmail');
@@ -118,7 +113,10 @@ export class GmailClient {
   /**
    * Get single message by ID
    */
-  async getMessage(messageId: string, format: 'full' | 'metadata' = 'full'): Promise<gmail_v1.Schema$Message> {
+  async getMessage(
+    messageId: string,
+    format: 'full' | 'metadata' = 'full'
+  ): Promise<gmail_v1.Schema$Message> {
     const response = await withRetry(() =>
       this.gmail.users.messages.get({
         userId: this.userId,
@@ -186,9 +184,7 @@ export class GmailClient {
    * List all labels
    */
   async listLabels(): Promise<gmail_v1.Schema$Label[]> {
-    const response = await withRetry(() =>
-      this.gmail.users.labels.list({ userId: this.userId })
-    );
+    const response = await withRetry(() => this.gmail.users.labels.list({ userId: this.userId }));
 
     return response.data.labels || [];
   }
@@ -303,6 +299,52 @@ export class GmailClient {
   }
 
   /**
+   * Send a reply message in a thread
+   */
+  async sendReply(
+    threadId: string,
+    to: string,
+    subject: string,
+    body: string,
+    inReplyTo?: string,
+    references?: string
+  ): Promise<{ messageId: string }> {
+    // Build RFC 822 email
+    const email = [
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      inReplyTo ? `In-Reply-To: ${inReplyTo}` : null,
+      references ? `References: ${references}` : null,
+      'Content-Type: text/plain; charset=utf-8',
+      '',
+      body,
+    ]
+      .filter(Boolean)
+      .join('\r\n');
+
+    // Base64 URL-safe encode
+    const encodedEmail = Buffer.from(email).toString('base64url');
+
+    const response = await withRetry(() =>
+      this.gmail.users.messages.send({
+        userId: this.userId,
+        requestBody: {
+          threadId,
+          raw: encodedEmail,
+        },
+      })
+    );
+
+    if (!response.data.id) {
+      throw new Error('Failed to send reply');
+    }
+
+    return {
+      messageId: response.data.id,
+    };
+  }
+
+  /**
    * Get draft by ID
    */
   async getDraft(draftId: string): Promise<gmail_v1.Schema$Draft> {
@@ -339,9 +381,7 @@ export class GmailClient {
    * List drafts
    */
   async listDrafts(): Promise<gmail_v1.Schema$Draft[]> {
-    const response = await withRetry(() =>
-      this.gmail.users.drafts.list({ userId: this.userId })
-    );
+    const response = await withRetry(() => this.gmail.users.drafts.list({ userId: this.userId }));
 
     return response.data.drafts || [];
   }
@@ -371,7 +411,10 @@ export class GmailClient {
   /**
    * Watch mailbox for push notifications via Pub/Sub
    */
-  async watch(topicName: string, labelIds: string[] = ['INBOX']): Promise<{
+  async watch(
+    topicName: string,
+    labelIds: string[] = ['INBOX']
+  ): Promise<{
     historyId: string;
     expiration: number;
   }> {
@@ -400,9 +443,7 @@ export class GmailClient {
    * Stop watching mailbox
    */
   async stopWatch(): Promise<void> {
-    await withRetry(() =>
-      this.gmail.users.stop({ userId: this.userId })
-    );
+    await withRetry(() => this.gmail.users.stop({ userId: this.userId }));
   }
 }
 
