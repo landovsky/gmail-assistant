@@ -19,7 +19,6 @@ RSpec.describe LlmGateway do
     double('RubyLLM::Chat').tap do |chat|
       allow(chat).to receive(:with_instructions).and_return(chat)
       allow(chat).to receive(:with_temperature).and_return(chat)
-      allow(chat).to receive(:with_max_tokens).and_return(chat)
       allow(chat).to receive(:with_params).and_return(chat)
       allow(chat).to receive(:ask).and_return(mock_response)
     end

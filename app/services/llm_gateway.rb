@@ -96,11 +96,11 @@ class LlmGateway
     # Set temperature
     chat = chat.with_temperature(temperature) if temperature
 
-    # Set max tokens
-    chat = chat.with_max_tokens(max_tokens) if max_tokens
-
-    # Set response format for JSON mode
-    chat = chat.with_params(response_format: { type: 'json_object' }) if response_format&.dig(:type) == 'json_object'
+    # Set provider params (max tokens, response format)
+    extra_params = {}
+    extra_params[:max_tokens] = max_tokens if max_tokens
+    extra_params[:response_format] = { type: 'json_object' } if response_format&.dig(:type) == 'json_object'
+    chat = chat.with_params(**extra_params) if extra_params.any?
 
     # TODO: Tool calling support for agent framework
     Rails.logger.warn('LlmGateway: tool calling not yet supported with RubyLLM, ignoring tools') if tools.present?
