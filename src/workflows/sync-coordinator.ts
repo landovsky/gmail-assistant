@@ -70,13 +70,12 @@ export async function performFullSync(params: {
         const classification = await classifyEmail({
           userId: params.userId,
           threadId: message.threadId,
+          messageId: message.messageId,
           subject: message.subject,
           from: message.from,
           body: message.body,
           headers: message.headers,
-          labelMappings: params.labelMappings,
-          client: params.client,
-        });
+        }, params.labelMappings);
 
         // Create email record
         const [email] = await db
@@ -86,12 +85,11 @@ export async function performFullSync(params: {
             gmailThreadId: message.threadId,
             gmailMessageId: message.messageId,
             subject: message.subject,
-            from: message.from,
+            senderEmail: message.from,
             classification: classification.category,
             status: classification.category === "needs_response" ? "pending" : "skipped",
-            classificationLabel: classification.labelId,
-            communicationStyle: classification.communicationStyle,
-            language: classification.language,
+            detectedLanguage: classification.language,
+            resolvedStyle: classification.communicationStyle,
             messageCount: 1,
           })
           .returning();
@@ -107,14 +105,14 @@ export async function performFullSync(params: {
 
         // If needs response, enqueue draft job
         if (classification.category === "needs_response") {
-          await params.queue.enqueue({
-            type: "draft",
-            userId: params.userId,
-            payload: {
-              threadId: message.threadId,
-              emailId: email.id,
-            },
-          });
+          await params.queue.enqueue(
+            "draft",
+            params.userId,
+            {
+              user_id: params.userId,
+              email_id: email.id,
+            }
+          );
 
           result.draftsCreated++;
         }
@@ -192,14 +190,15 @@ async function handleLabelAdded(params: {
     });
 
     if (email) {
-      await params.queue.enqueue({
-        type: "rework",
-        userId: params.userId,
-        payload: {
-          threadId: params.threadId,
-          emailId: email.id,
-        },
-      });
+      await params.queue.enqueue(
+        "rework",
+        params.userId,
+        {
+          user_id: params.userId,
+          thread_id: params.threadId,
+          email_id: email.id,
+        }
+      );
     }
   }
 
@@ -214,14 +213,15 @@ async function handleLabelAdded(params: {
     });
 
     if (email) {
-      await params.queue.enqueue({
-        type: "cleanup",
-        userId: params.userId,
-        payload: {
-          threadId: params.threadId,
-          emailId: email.id,
-        },
-      });
+      await params.queue.enqueue(
+        "cleanup",
+        params.userId,
+        {
+          user_id: params.userId,
+          thread_id: params.threadId,
+          email_id: email.id,
+        }
+      );
     }
   }
 }
@@ -256,15 +256,16 @@ async function handleMessageDeleted(params: {
 
   // For each deleted draft, enqueue sent detection job
   for (const email of emailsWithDeletedDrafts) {
-    await params.queue.enqueue({
-      type: "sync",
-      userId: params.userId,
-      payload: {
+    await params.queue.enqueue(
+      "sync",
+      params.userId,
+      {
+        user_id: params.userId,
         action: "detect_sent",
-        threadId: email.gmailThreadId,
-        emailId: email.id,
-      },
-    });
+        thread_id: email.gmailThreadId,
+        email_id: email.id,
+      }
+    );
   }
 }
 
@@ -321,13 +322,12 @@ export async function performIncrementalSync(params: {
         const classification = await classifyEmail({
           userId: params.userId,
           threadId: message.threadId,
+          messageId: message.messageId,
           subject: message.subject,
           from: message.from,
           body: message.body,
           headers: message.headers,
-          labelMappings: params.labelMappings,
-          client: params.client,
-        });
+        }, params.labelMappings);
 
         const [email] = await db
           .insert(emails)
@@ -336,12 +336,11 @@ export async function performIncrementalSync(params: {
             gmailThreadId: message.threadId,
             gmailMessageId: message.messageId,
             subject: message.subject,
-            from: message.from,
+            senderEmail: message.from,
             classification: classification.category,
             status: classification.category === "needs_response" ? "pending" : "skipped",
-            classificationLabel: classification.labelId,
-            communicationStyle: classification.communicationStyle,
-            language: classification.language,
+            detectedLanguage: classification.language,
+            resolvedStyle: classification.communicationStyle,
             messageCount: 1,
           })
           .returning();
@@ -355,14 +354,14 @@ export async function performIncrementalSync(params: {
         });
 
         if (classification.category === "needs_response") {
-          await params.queue.enqueue({
-            type: "draft",
-            userId: params.userId,
-            payload: {
-              threadId: message.threadId,
-              emailId: email.id,
-            },
-          });
+          await params.queue.enqueue(
+            "draft",
+            params.userId,
+            {
+              user_id: params.userId,
+              email_id: email.id,
+            }
+          );
 
           result.draftsCreated++;
         }

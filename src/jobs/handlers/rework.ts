@@ -35,7 +35,7 @@ export class ReworkHandler implements JobHandler {
 
     const labelMappings = labels.map((l) => ({
       key: l.labelKey,
-      name: l.labelName,
+      name: l.gmailLabelName,
       gmailLabelId: l.gmailLabelId,
     }));
 
@@ -65,20 +65,20 @@ export class ReworkHandler implements JobHandler {
     const reworked = await regenerateDraft({
       userId: email.userId,
       threadId: email.gmailThreadId,
-      subject: email.subject,
-      from: email.from,
-      body: email.body || "",
+      subject: email.subject || "",
+      from: email.senderEmail,
+      body: email.snippet || "",
       draftId: email.draftId!,
-      communicationStyle: email.communicationStyle || "business",
-      language: email.language || "en",
+      communicationStyle: (email.resolvedStyle as "formal" | "business" | "informal") || "business",
+      language: email.detectedLanguage || "en",
       client,
     });
 
     // Create new Gmail draft
     const draft = await client.createDraft(
       email.gmailThreadId,
-      email.from, // to
-      `Re: ${email.subject}`,
+      email.senderEmail, // to
+      `Re: ${email.subject || ""}`,
       reworked.body,
       email.gmailMessageId
     );

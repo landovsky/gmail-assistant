@@ -33,7 +33,7 @@ export class ClassifyHandler implements JobHandler {
 
     const labelMappings = labels.map((l) => ({
       key: l.labelKey,
-      name: l.labelName,
+      name: l.gmailLabelName,
       gmailLabelId: l.gmailLabelId,
     }));
 
@@ -66,12 +66,11 @@ export class ClassifyHandler implements JobHandler {
         gmailThreadId: payload.thread_id,
         gmailMessageId: payload.message_id,
         subject: message.subject,
-        from: message.from,
+        senderEmail: message.from,
         classification: classification.category,
         status: classification.category === "needs_response" ? "pending" : "skipped",
-        classificationLabel: classification.labelId,
-        communicationStyle: classification.communicationStyle,
-        language: classification.language,
+        detectedLanguage: classification.language,
+        resolvedStyle: classification.communicationStyle,
         messageCount: 1,
       })
       .returning();
@@ -87,14 +86,14 @@ export class ClassifyHandler implements JobHandler {
 
     // If needs response, enqueue draft job
     if (classification.category === "needs_response") {
-      await this.queue.enqueue({
-        type: "draft",
-        userId: payload.user_id,
-        payload: {
-          threadId: payload.thread_id,
-          emailId: email.id,
-        },
-      });
+      await this.queue.enqueue(
+        "draft",
+        payload.user_id,
+        {
+          user_id: payload.user_id,
+          email_id: email.id,
+        }
+      );
 
       console.log(`✓ Email classified as needs_response - draft job queued: email_id=${email.id}`);
     } else {

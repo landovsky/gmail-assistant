@@ -16,6 +16,9 @@ export interface SyncPayload {
   user_id: number;
   history_id?: string;
   force_full?: boolean;
+  action?: "detect_sent";
+  thread_id?: string;
+  email_id?: number;
 }
 
 export interface ClassifyPayload {
@@ -33,13 +36,13 @@ export interface DraftPayload {
 export interface CleanupPayload {
   user_id: number;
   thread_id: string;
-  action: "done" | "check_sent";
+  email_id: number;
 }
 
 export interface ReworkPayload {
   user_id: number;
   thread_id: string;
-  email_id?: number;
+  email_id: number;
 }
 
 export interface ManualDraftPayload {

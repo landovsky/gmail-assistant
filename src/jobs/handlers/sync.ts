@@ -31,7 +31,7 @@ export class SyncHandler implements JobHandler {
 
     const labelMappings = labels.map((l) => ({
       key: l.labelKey,
-      name: l.labelName,
+      name: l.gmailLabelName,
       gmailLabelId: l.gmailLabelId,
     }));
 

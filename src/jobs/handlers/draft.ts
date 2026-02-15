@@ -35,7 +35,7 @@ export class DraftHandler implements JobHandler {
 
     const labelMappings = labels.map((l) => ({
       key: l.labelKey,
-      name: l.labelName,
+      name: l.gmailLabelName,
       gmailLabelId: l.gmailLabelId,
     }));
 
@@ -43,19 +43,19 @@ export class DraftHandler implements JobHandler {
     const draftResult = await generateDraft({
       userId: email.userId,
       threadId: email.gmailThreadId,
-      subject: email.subject,
-      from: email.from,
-      body: email.body || "",
-      communicationStyle: email.communicationStyle || "business",
-      language: email.language || "en",
+      subject: email.subject || "",
+      from: email.senderEmail,
+      body: email.snippet || "",
+      communicationStyle: (email.resolvedStyle as "formal" | "business" | "informal") || "business",
+      language: email.detectedLanguage || "en",
       client,
     });
 
     // Create Gmail draft
     const draft = await client.createDraft(
       email.gmailThreadId,
-      email.from, // to
-      `Re: ${email.subject}`,
+      email.senderEmail, // to
+      `Re: ${email.subject || ""}`,
       draftResult.body,
       email.gmailMessageId
     );

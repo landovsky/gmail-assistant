@@ -29,22 +29,33 @@ export interface StateTransitionResult {
   error?: string;
 }
 
+type EventType =
+  | "classified"
+  | "label_added"
+  | "label_removed"
+  | "draft_created"
+  | "draft_trashed"
+  | "draft_reworked"
+  | "sent_detected"
+  | "archived"
+  | "rework_limit_reached"
+  | "waiting_retriaged"
+  | "error";
+
 /**
  * Log state transition event
  */
 async function logEvent(params: {
   userId: number;
-  emailId: number;
   threadId: string;
-  eventType: string;
+  eventType: EventType;
   detail?: string;
   labelId?: string;
   draftId?: string;
 }): Promise<void> {
   await db.insert(emailEvents).values({
     userId: params.userId,
-    emailId: params.emailId,
-    threadId: params.threadId,
+    gmailThreadId: params.threadId,
     eventType: params.eventType,
     detail: params.detail,
     labelId: params.labelId,
@@ -84,13 +95,12 @@ export async function handleClassificationComplete(params: {
   // Update status
   await db
     .update(emails)
-    .set({ status, classificationLabel: params.labelId })
+    .set({ status })
     .where(eq(emails.id, emailId));
 
   // Log event
   await logEvent({
     userId: params.userId,
-    emailId,
     threadId: params.threadId,
     eventType: "classified",
     detail: `Classified as ${params.classification}`,
@@ -136,20 +146,18 @@ export async function handleDraftCreated(params: {
     })
     .where(eq(emails.id, email.id));
 
-  // Update Gmail labels: remove classification label, add Outbox
+  // Update Gmail labels: add Outbox
   const outboxLabelId = params.labelMappings.find((l) => l.key === "outbox")
     ?.gmailLabelId;
-  if (outboxLabelId && email.classificationLabel) {
+  if (outboxLabelId) {
     await params.client.modifyThreadLabels(params.threadId, {
       addLabelIds: [outboxLabelId],
-      removeLabelIds: [email.classificationLabel],
     });
   }
 
   // Log event
   await logEvent({
     userId: params.userId,
-    emailId: email.id,
     threadId: params.threadId,
     eventType: "draft_created",
     draftId: params.draftId,
@@ -192,7 +200,6 @@ export async function handleReworkRequested(params: {
 
     await logEvent({
       userId: params.userId,
-      emailId: email.id,
       threadId: params.threadId,
       eventType: "rework_limit_reached",
       detail: `Rework limit reached (${currentReworkCount + 1} attempts)`,
@@ -210,7 +217,6 @@ export async function handleReworkRequested(params: {
   // Log event (actual rework happens in job handler)
   await logEvent({
     userId: params.userId,
-    emailId: email.id,
     threadId: params.threadId,
     eventType: "draft_reworked",
     detail: `Rework requested (attempt ${currentReworkCount + 1})`,
@@ -272,7 +278,6 @@ export async function handleSentDetected(params: {
     // Log event
     await logEvent({
       userId: params.userId,
-      emailId: email.id,
       threadId: params.threadId,
       eventType: "sent_detected",
       draftId: email.draftId,
@@ -325,7 +330,6 @@ export async function handleDoneRequested(params: {
   // Log event
   await logEvent({
     userId: params.userId,
-    emailId: email.id,
     threadId: params.threadId,
     eventType: "archived",
   });
@@ -375,7 +379,6 @@ export async function handleWaitingRetriage(params: {
   // Log event (reclassification happens in job handler)
   await logEvent({
     userId: params.userId,
-    emailId: email.id,
     threadId: params.threadId,
     eventType: "waiting_retriaged",
     detail: `New message arrived (count: ${params.newMessageCount})`,

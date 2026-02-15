@@ -23,7 +23,7 @@ export async function generateDraft(input: DraftGenerationInput): Promise<DraftR
   const gmailSearch = async (query: string) => {
     const results = await input.client.listMessages(query);
     return results.map(msg => ({
-      threadId: msg.threadId || '',
+      id: msg.threadId || '',
       subject: getSubject(msg),
       snippet: msg.snippet || '',
     }));
