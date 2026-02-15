@@ -63,7 +63,7 @@ If a human later adopts and modifies the tool, they can remove the suffix to cla
 
 Tooling is tracked as beads like any other work, tagged `[tooling]` in the bead description. Self-imposed limits:
 
-- **No more than 1 tool per 5 feature tasks.** If you've built a tool, ship at least 5 product beads before building another.
+- **No more than 1 tool per 5 feature tasks.** If you've built a tool, ship at least 5 tasks before building another.
 - **No tool may take longer than 15 minutes to build and test.** If it's more complex, create a bead for it and let a human decide whether to prioritize it.
 - **No speculative tooling.** Only build what solves a problem you've already hit, not one you might hit later.
 

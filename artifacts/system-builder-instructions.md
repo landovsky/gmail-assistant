@@ -41,22 +41,7 @@ Adapt your implementation approach to the stack's strengths. For example:
 - Use the stack's official project generator / scaffolding tool (e.g., `rails new`, `nest new`, `create-next-app`, `cargo init`).
 - Initialize git immediately after scaffolding: `git init && git add -A && git commit -m "chore: scaffold project"`.
 
-### 4. Set Up Beads (Task Management)
-
-Install and initialize [beads](https://github.com/steveyegge/beads) for task management:
-
-```bash
-npm install -g beads   # or follow current install instructions from the repo
-beads init
-```
-
-**Every unit of work** must be tracked as a bead:
-- Before starting work: create a bead, sync to git.
-- When beginning work: mark the bead **in progress**, sync to git.
-- When work is complete: mark the bead **done**, sync to git.
-- If you spot a bug or deficiency unrelated to your current task: create a new bead describing the issue so another developer can pick it up, and sync to git.
-
-### 5. Build `CLAUDE.md`
+### 4. Build `CLAUDE.md`
 
 Create `CLAUDE.md` at the project root. This file is your persistent memory — it tells any future Claude Code session how to work in this repo. Include:
 
@@ -102,13 +87,13 @@ This project uses [beads](https://github.com/steveyegge/beads) for task tracking
 
 Update `CLAUDE.md` as the project evolves. It must always reflect the current state of the repo.
 
-### 6. Set Up Code Hygiene
+### 5. Set Up Code Hygiene
 
 - Install and configure the linter and formatter appropriate for the stack.
 - Add a pre-commit hook or equivalent to enforce linting.
 - Commit the configuration: `git add -A && git commit -m "chore: configure linting and formatting"`.
 
-### 7. Set Up CI/CD
+### 6. Set Up CI/CD
 
 Create a CI pipeline (GitHub Actions unless the spec says otherwise) that runs on every push and PR:
 

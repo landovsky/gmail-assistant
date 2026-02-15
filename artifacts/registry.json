@@ -1,13 +1,13 @@
 [
   {
-    "filename": "artifacts/specification/00-spec-philosophy-how-to-keep-it-up-to-date.md",
+    "filename": "artifacts/spec-philosophy-how-to-keep-it-up-to-date.md",
     "description": "Spec philosophy, maintenance, and how to keep the behavioral specification up to date",
     "usage": "decide"
   },
   {
     "filename": "artifacts/system-builder-instructions.md",
     "description": "Instructions for building a system from scratch: bootstrap sequence, development workflow, testing philosophy, commit discipline, and multi-agent coordination",
-    "usage": "decide"
+    "usage": "always"
   },
   {
     "filename": "artifacts/self-built-tooling.md",
