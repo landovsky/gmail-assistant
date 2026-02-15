@@ -8,11 +8,20 @@ class ClassifyJob < ApplicationJob
     user = User.find(user_id)
     payload = payload.symbolize_keys
 
+    # Find matching internal Job record to track status
+    internal_job = Job.pending.find_by(
+      job_type: "classify",
+      user: user,
+      payload: payload.to_json
+    )
+    internal_job&.claim!
+
     # If we have an email_id, it's a reclassification
     if payload[:email_id]
       email = user.emails.find(payload[:email_id])
       pipeline = Classification::Pipeline.new(user: user)
       pipeline.reclassify(email)
+      internal_job&.complete!
       return
     end
 
@@ -30,10 +39,15 @@ class ClassifyJob < ApplicationJob
       }
     )
 
+    internal_job&.complete!
+
     # If classified as needs_response, enqueue draft job
     email = user.emails.find_by(gmail_thread_id: payload[:gmail_thread_id])
     if email&.can_draft?
       DraftJob.perform_later(user_id, { "email_id" => email.id })
     end
+  rescue => e
+    internal_job&.fail!(e.message)
+    raise
   end
 end
