@@ -97,7 +97,7 @@ class LlmGateway
     chat = chat.with_schema({ type: 'object' }) if response_format&.dig(:type) == 'json_object'
 
     # Max tokens: translate to provider-native params via with_params
-    chat = chat.with_params(provider_max_tokens_params(model, max_tokens)) if max_tokens
+    chat = chat.with_params(**provider_max_tokens_params(model, max_tokens)) if max_tokens
 
     Rails.logger.warn('LlmGateway: tool calling not yet supported with RubyLLM, ignoring tools') if tools.present?
 
