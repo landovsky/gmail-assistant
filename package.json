@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "start": "bun run src/index.ts",
-    "test": "tsx --test tests/**/*.test.ts",
-    "test:watch": "tsx --test --watch tests/**/*.test.ts",
+    "test": "tsx --test --import ./tests/setup.ts tests/**/*.test.ts",
+    "test:watch": "tsx --test --watch --import ./tests/setup.ts tests/**/*.test.ts",
+    "test:e2e": "tsx --test --import ./tests/setup.ts tests/e2e/**/*.test.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,json}\"",

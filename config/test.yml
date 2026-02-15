@@ -1,0 +1,25 @@
+
+database:
+  type: sqlite
+  url: data/test.db
+
+jobQueue:
+  type: sqlite
+  sqlitePath: data/test-jobs.db
+  concurrency: 1
+
+auth:
+  masterKeyPath: config/test-master.key
+  tokenPath: config/test-token.json
+
+llm:
+  defaultProvider: anthropic
+  models:
+    classify: claude-3-haiku-20240307
+    draft: claude-3-5-sonnet-20241022
+    context: claude-3-haiku-20240307
+
+gmail:
+  syncIntervalMs: 900000
+  watchExpirationMs: 604800000
+  maxHistoryResults: 100
