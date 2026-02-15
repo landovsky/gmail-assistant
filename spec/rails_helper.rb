@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
-ENV["RAILS_ENV"] ||= "test"
+ENV["RAILS_ENV"] = "test"
 require_relative "../config/environment"
 abort("The Rails environment is running in production mode!") if Rails.env.production?
 require "rspec/rails"
@@ -25,6 +25,12 @@ RSpec.configure do |config|
 
   # FactoryBot
   config.include FactoryBot::Syntax::Methods
+
+  # ActiveJob test adapter for job specs
+  config.include ActiveJob::TestHelper, type: :job
+  config.before(:each, type: :job) do
+    ActiveJob::Base.queue_adapter = :test
+  end
 
   # Shoulda Matchers
   config.include(Shoulda::Matchers::ActiveModel, type: :model)
