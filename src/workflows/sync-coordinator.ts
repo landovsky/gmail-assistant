@@ -7,7 +7,7 @@ import { db } from "../db/index.js";
 import { emails, jobs, syncState } from "../db/schema.js";
 import { eq, and, inArray } from "drizzle-orm";
 import { GmailClient } from "../services/gmail/client.js";
-import { syncMessages } from "../services/gmail/sync.js";
+import { sync as syncMessages } from "../services/gmail/sync-adapter.js";
 import { classifyEmailTwoTier as classifyEmail } from "../services/classification/engine.js";
 import { handleClassificationComplete } from "./email-lifecycle.js";
 import type { JobQueue } from "../jobs/queue/interface.js";
@@ -44,11 +44,11 @@ export async function performFullSync(params: {
     const lastHistoryId = state?.lastHistoryId;
 
     // Fetch new messages via Gmail sync
-    const syncResult = await syncMessages({
-      userId: params.userId,
-      client: params.client,
-      lastHistoryId: lastHistoryId || undefined,
-    });
+    const syncResult = await syncMessages(
+      params.userId,
+      params.client,
+      lastHistoryId || undefined
+    );
 
     result.messagesProcessed = syncResult.newMessages.length;
 
@@ -296,11 +296,11 @@ export async function performIncrementalSync(params: {
 
   try {
     // Fetch only history changes
-    const syncResult = await syncMessages({
-      userId: params.userId,
-      client: params.client,
-      lastHistoryId: state.lastHistoryId,
-    });
+    const syncResult = await syncMessages(
+      params.userId,
+      params.client,
+      state.lastHistoryId
+    );
 
     result.messagesProcessed = syncResult.newMessages.length;
 
