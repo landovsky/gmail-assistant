@@ -34,6 +34,37 @@ port ENV.fetch("PORT", 3000)
 # Allow puma to be restarted by `bin/rails restart` command.
 plugin :tmp_restart
 
+# Embed Sidekiq into the Puma process so a separate worker isn't needed.
+# Disable with SIDEKIQ_IN_PUMA=0 if running Sidekiq standalone.
+if ENV.fetch("SIDEKIQ_IN_PUMA", "1") == "1"
+  sidekiq_started = false
+  sidekiq_launcher = nil
+
+  start_sidekiq = -> {
+    return if sidekiq_started
+    sidekiq_started = true
+
+    require "sidekiq/launcher"
+    sidekiq_config = Sidekiq.default_configuration
+    sidekiq_config.queues = %w[critical default low]
+    sidekiq_config.concurrency = ENV.fetch("SIDEKIQ_CONCURRENCY", 3).to_i
+    sidekiq_config.logger.level = Logger::INFO
+
+    sidekiq_launcher = Sidekiq::Launcher.new(sidekiq_config)
+    sidekiq_launcher.run
+  }
+
+  stop_sidekiq = -> { sidekiq_launcher&.stop }
+
+  # Clustered mode (WEB_CONCURRENCY > 0)
+  before_worker_boot(&start_sidekiq)
+  before_worker_shutdown(&stop_sidekiq)
+
+  # Single mode (default dev)
+  after_booted(&start_sidekiq)
+  at_exit(&stop_sidekiq)
+end
+
 # Specify the PID file. Defaults to tmp/pids/server.pid in development.
 # In other environments, only set the PID file if requested.
 pidfile ENV["PIDFILE"] if ENV["PIDFILE"]

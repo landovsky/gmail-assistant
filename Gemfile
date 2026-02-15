@@ -13,6 +13,7 @@ gem "importmap-rails"
 
 # Background job processing
 gem "sidekiq", "~> 7.0"
+gem "connection_pool", "~> 2.4"  # Sidekiq 7.x incompatible with connection_pool 3.x
 
 # Gmail API integration
 gem "google-apis-gmail_v1"
