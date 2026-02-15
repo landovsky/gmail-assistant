@@ -1,0 +1,45 @@
+# See https://help.github.com/articles/ignoring-files for more about ignoring files.
+
+# Ignore bundler config.
+/.bundle
+
+# Ignore all environment files (except example).
+/.env*
+!/.env.example
+
+# Ignore all logfiles and tempfiles.
+/log/*
+/tmp/*
+!/log/.keep
+!/tmp/.keep
+
+# Ignore pidfiles, but keep the directory.
+/tmp/pids/*
+!/tmp/pids/
+!/tmp/pids/.keep
+
+# Ignore storage (uploaded files in development and any SQLite databases).
+/storage/*
+!/storage/.keep
+/tmp/storage/*
+!/tmp/storage/
+!/tmp/storage/.keep
+
+/public/assets
+
+# Ignore key files for decrypting credentials and more.
+/config/*.key
+
+# Vendor bundle (local gems)
+/vendor/bundle
+
+# Gmail OAuth credentials (NEVER commit these)
+/config/credentials.json
+/config/token.json
+/config/service-account-key.json
+
+# Coverage reports
+/coverage
+
+# OS files
+.DS_Store

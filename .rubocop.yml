@@ -1,0 +1,70 @@
+require:
+  - rubocop-rails
+  - rubocop-rspec
+  - rubocop-performance
+
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: enable
+  Exclude:
+    - 'vendor/**/*'
+    - 'db/schema.rb'
+    - 'bin/**/*'
+    - 'node_modules/**/*'
+    - 'config/environments/**/*'
+    - 'config/initializers/**/*'
+    - 'config/puma.rb'
+
+# Line length
+Layout/LineLength:
+  Max: 120
+  AllowedPatterns:
+    - '^\s*#'  # Comments
+
+# Method length
+Metrics/MethodLength:
+  Max: 25
+  CountAsOne:
+    - array
+    - hash
+    - heredoc
+
+# Class length
+Metrics/ClassLength:
+  Max: 200
+
+# Block length (allow longer specs)
+Metrics/BlockLength:
+  Exclude:
+    - 'spec/**/*'
+    - 'config/routes.rb'
+
+# Allow multi-line method chains
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: indented
+
+# Documentation - don't require on everything
+Style/Documentation:
+  Enabled: false
+
+# Frozen string literal
+Style/FrozenStringLiteralComment:
+  Enabled: true
+
+# RSpec
+RSpec/ExampleLength:
+  Max: 20
+
+RSpec/MultipleExpectations:
+  Max: 5
+
+RSpec/NestedGroups:
+  Max: 4
+
+# Rails
+Rails/SkipsModelValidations:
+  Enabled: false
+
+# Allow rescue from StandardError
+Style/RescueStandardError:
+  EnforcedStyle: implicit
