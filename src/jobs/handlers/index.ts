@@ -6,19 +6,28 @@ import { ReworkHandler } from "./rework.js";
 import { ManualDraftHandler } from "./manual-draft.js";
 import { AgentProcessHandler } from "./agent-process.js";
 import type { JobHandler, JobType } from "../types.js";
+import type { JobQueue } from "../queue/interface.js";
 
-const handlers: Record<JobType, JobHandler> = {
-  sync: new SyncHandler(),
-  classify: new ClassifyHandler(),
-  draft: new DraftHandler(),
-  cleanup: new CleanupHandler(),
-  rework: new ReworkHandler(),
-  manual_draft: new ManualDraftHandler(),
-  agent_process: new AgentProcessHandler(),
-};
+let handlersInstance: Record<JobType, JobHandler> | null = null;
+
+export function initializeHandlers(queue: JobQueue): void {
+  handlersInstance = {
+    sync: new SyncHandler(queue),
+    classify: new ClassifyHandler(queue),
+    draft: new DraftHandler(),
+    cleanup: new CleanupHandler(),
+    rework: new ReworkHandler(),
+    manual_draft: new ManualDraftHandler(),
+    agent_process: new AgentProcessHandler(),
+  };
+}
 
 export function getJobHandler(jobType: JobType): JobHandler {
-  const handler = handlers[jobType];
+  if (!handlersInstance) {
+    throw new Error("Handlers not initialized. Call initializeHandlers() first.");
+  }
+
+  const handler = handlersInstance[jobType];
   if (!handler) {
     throw new Error(`No handler registered for job type: ${jobType}`);
   }

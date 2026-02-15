@@ -303,15 +303,36 @@ export class GmailClient {
   }
 
   /**
-   * Delete/trash a draft
+   * Get draft by ID
    */
-  async deleteDraft(draftId: string): Promise<void> {
+  async getDraft(draftId: string): Promise<gmail_v1.Schema$Draft> {
+    const response = await withRetry(() =>
+      this.gmail.users.drafts.get({
+        userId: this.userId,
+        id: draftId,
+      })
+    );
+
+    return response.data;
+  }
+
+  /**
+   * Trash a draft (soft delete)
+   */
+  async trashDraft(draftId: string): Promise<void> {
     await withRetry(() =>
       this.gmail.users.drafts.delete({
         userId: this.userId,
         id: draftId,
       })
     );
+  }
+
+  /**
+   * Delete/trash a draft (alias for trashDraft)
+   */
+  async deleteDraft(draftId: string): Promise<void> {
+    await this.trashDraft(draftId);
   }
 
   /**
@@ -323,6 +344,28 @@ export class GmailClient {
     );
 
     return response.data.drafts || [];
+  }
+
+  /**
+   * Modify labels on a thread
+   */
+  async modifyThreadLabels(
+    threadId: string,
+    modifications: {
+      addLabelIds?: string[];
+      removeLabelIds?: string[];
+    }
+  ): Promise<void> {
+    await withRetry(() =>
+      this.gmail.users.threads.modify({
+        userId: this.userId,
+        id: threadId,
+        requestBody: {
+          addLabelIds: modifications.addLabelIds || [],
+          removeLabelIds: modifications.removeLabelIds || [],
+        },
+      })
+    );
   }
 
   /**

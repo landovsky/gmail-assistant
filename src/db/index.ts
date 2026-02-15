@@ -3,22 +3,14 @@ import Database from "better-sqlite3";
 import { appConfig } from "../config/index.js";
 import * as schema from "./schema.js";
 
-let db: ReturnType<typeof drizzle>;
+// Initialize database connection
+const sqlite = new Database(
+  appConfig.database.type === "sqlite"
+    ? appConfig.database.url
+    : "data/gmail-assistant.db"
+);
+sqlite.pragma("journal_mode = WAL");
+sqlite.pragma("foreign_keys = ON");
 
-export function getDb() {
-  if (!db) {
-    if (appConfig.database.type !== "sqlite") {
-      throw new Error("Only SQLite is currently supported");
-    }
-
-    const sqlite = new Database(appConfig.database.url);
-    sqlite.pragma("journal_mode = WAL");
-    sqlite.pragma("foreign_keys = ON");
-
-    db = drizzle(sqlite, { schema });
-  }
-
-  return db;
-}
-
+export const db = drizzle(sqlite, { schema });
 export { schema };
