@@ -1,31 +1,28 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, beforeEach } from "node:test";
+import assert from "node:assert";
 import { app } from "../../src/api/app";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, schema } from "../../src/db";
-import { unlinkSync, existsSync } from "fs";
+import { getDb, schema } from "../../src/db/index";
 
-const TEST_DB = "./data/test-webhook-api.db";
+const db = getDb();
+
+async function cleanUsers() {
+  await db.delete(schema.agentRuns);
+  await db.delete(schema.llmCalls);
+  await db.delete(schema.emailEvents);
+  await db.delete(schema.jobs);
+  await db.delete(schema.emails);
+  await db.delete(schema.syncState);
+  await db.delete(schema.userSettings);
+  await db.delete(schema.userLabels);
+  await db.delete(schema.users);
+}
 
 describe("Webhook API", () => {
-  beforeEach(() => {
-    // Clean up test database
-    if (existsSync(TEST_DB)) {
-      unlinkSync(TEST_DB);
-    }
-    if (existsSync(`${TEST_DB}-shm`)) {
-      unlinkSync(`${TEST_DB}-shm`);
-    }
-    if (existsSync(`${TEST_DB}-wal`)) {
-      unlinkSync(`${TEST_DB}-wal`);
-    }
-
-    process.env.DATABASE_URL = TEST_DB;
-    runMigrations(TEST_DB);
+  beforeEach(async () => {
+    await cleanUsers();
   });
 
   it("should process Gmail webhook notification", async () => {
-    const db = getDb();
-
     // Create test user
     await db.insert(schema.users).values({
       email: "test@example.com",
@@ -55,8 +52,8 @@ describe("Webhook API", () => {
       body: JSON.stringify(notification),
     });
 
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("OK");
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(await res.text(), "OK");
   });
 
   it("should handle invalid notification format", async () => {
@@ -68,6 +65,6 @@ describe("Webhook API", () => {
       body: JSON.stringify({}),
     });
 
-    expect(res.status).toBe(400);
+    assert.strictEqual(res.status, 400);
   });
 });
