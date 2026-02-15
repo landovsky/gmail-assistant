@@ -163,18 +163,7 @@ RSpec.describe LlmGateway do
       expect(result[:parsed_response]).to eq({ 'category' => 'needs_response' })
     end
 
-    it 'uses with_schema for JSON mode' do
-      gateway.chat_json(
-        model: 'test',
-        messages: messages,
-        user: user,
-        call_type: 'classify'
-      )
-
-      expect(mock_chat).to have_received(:with_schema).with({ type: 'object' })
-    end
-
-    it 'passes max_tokens via provider-native params' do
+    it 'passes JSON mode and max_tokens as provider-native params for Gemini' do
       gateway.chat_json(
         model: 'gemini-2.0-flash',
         messages: messages,
@@ -183,8 +172,22 @@ RSpec.describe LlmGateway do
         call_type: 'classify'
       )
 
-      expect(mock_chat).to have_received(:with_params)
-        .with(generationConfig: { maxOutputTokens: 256 })
+      expect(mock_chat).to have_received(:with_params).with(
+        generationConfig: { maxOutputTokens: 256, responseMimeType: 'application/json' }
+      )
+    end
+
+    it 'passes JSON mode as response_format for OpenAI models' do
+      gateway.chat_json(
+        model: 'gpt-4o',
+        messages: messages,
+        user: user,
+        call_type: 'classify'
+      )
+
+      expect(mock_chat).to have_received(:with_params).with(
+        response_format: { type: 'json_object' }
+      )
     end
   end
 end

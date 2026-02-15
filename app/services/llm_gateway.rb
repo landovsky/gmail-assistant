@@ -92,12 +92,11 @@ class LlmGateway
     chat = chat.with_instructions(system_prompt) if system_prompt.present?
     chat = chat.with_temperature(temperature) if temperature
 
-    # JSON mode: use RubyLLM's with_schema which handles provider differences
-    # (Gemini uses responseMimeType, OpenAI uses response_format)
-    chat = chat.with_schema({ type: 'object' }) if response_format&.dig(:type) == 'json_object'
-
-    # Max tokens: translate to provider-native params via with_params
-    chat = chat.with_params(**provider_max_tokens_params(model, max_tokens)) if max_tokens
+    # Build provider-native params for max_tokens and JSON mode
+    extra_params = {}
+    extra_params.deep_merge!(provider_max_tokens_params(model, max_tokens)) if max_tokens
+    extra_params.deep_merge!(provider_json_mode_params(model)) if response_format&.dig(:type) == 'json_object'
+    chat = chat.with_params(**extra_params) if extra_params.any?
 
     Rails.logger.warn('LlmGateway: tool calling not yet supported with RubyLLM, ignoring tools') if tools.present?
 
@@ -166,6 +165,18 @@ class LlmGateway
     else
       # OpenAI and compatible APIs
       { max_completion_tokens: max_tokens }
+    end
+  end
+
+  # Translate JSON mode to provider-native payload structure.
+  def provider_json_mode_params(model)
+    if model.to_s.match?(/gemini/i)
+      { generationConfig: { responseMimeType: 'application/json' } }
+    elsif model.to_s.match?(/claude/i)
+      {} # Anthropic doesn't support JSON mode; enforced via system prompt
+    else
+      # OpenAI and compatible APIs
+      { response_format: { type: 'json_object' } }
     end
   end
 
