@@ -17,7 +17,24 @@ namespace :db_management do
 
     counts = {}
 
+    # Clear Sidekiq queues and scheduled jobs
+    require "sidekiq/api"
+    queues_cleared = 0
+    Sidekiq::Queue.all.each do |queue|
+      queues_cleared += queue.size
+      queue.clear
+    end
+    scheduled_cleared = Sidekiq::ScheduledSet.new.size
+    Sidekiq::ScheduledSet.new.clear
+    retries_cleared = Sidekiq::RetrySet.new.size
+    Sidekiq::RetrySet.new.clear
+    dead_cleared = Sidekiq::DeadSet.new.size
+    Sidekiq::DeadSet.new.clear
+    puts "Sidekiq cleared: #{queues_cleared} queued, #{scheduled_cleared} scheduled, #{retries_cleared} retries, #{dead_cleared} dead"
+    puts ""
+
     # Delete in dependency order
+    counts[:jobs] = Job.delete_all
     counts[:email_events] = EmailEvent.delete_all
     counts[:llm_calls] = LlmCall.delete_all
     counts[:agent_runs] = AgentRun.delete_all
