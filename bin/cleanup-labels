@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # Remove all AI labels from Gmail messages.
 # Usage:
-#   bin/cleanup-labels          # dry run, first user
-#   bin/cleanup-labels 1        # dry run, user ID 1
-#   bin/cleanup-labels 1 delete # actually remove labels
+#   bin/cleanup-labels              # dry run, first user
+#   bin/cleanup-labels delete       # actually remove, first user
+#   bin/cleanup-labels 1 delete     # actually remove, user ID 1
 set -euo pipefail
 
-USER_ID="${1:-}"
-MODE="${2:-dry_run}"
+# If first arg is "delete" or "dry_run", treat it as mode (no user_id)
+if [[ "${1:-}" =~ ^(delete|dry_run)$ ]]; then
+  MODE="$1"
+  USER_ID=""
+else
+  USER_ID="${1:-}"
+  MODE="${2:-dry_run}"
+fi
 
 if [ "$USER_ID" = "" ]; then
   bundle exec rake "gmail:cleanup_labels[,${MODE}]"
