@@ -53,9 +53,12 @@ sudo systemctl start redis
 2. Create a new project (or use existing)
 3. Enable the **Gmail API**
 4. Create OAuth 2.0 credentials:
-   - Application type: **Desktop app**
+   - Application type: **Web application**
+   - Add authorized redirect URI: `http://localhost:8080/`
    - Download the credentials JSON file
 5. Save as `config/credentials.json`
+
+> **Note**: The first time you run `/api/auth/init`, a browser will open automatically for you to authorize the application. A temporary web server will start on port 8080 to receive the OAuth callback.
 
 ### 3. Configure Environment
 
@@ -316,6 +319,15 @@ curl http://localhost:3000/api/briefing/your-email@gmail.com
 
 **Problem**: "Invalid grant" or "Token expired"
 - **Solution**: Delete `config/token.json` and restart the server to re-authorize
+
+**Problem**: "Redirect URI mismatch" during OAuth flow
+- **Solution**: Add `http://localhost:8080/` as an authorized redirect URI in Google Cloud Console OAuth credentials
+
+**Problem**: Browser doesn't open automatically during OAuth
+- **Solution**: Manually copy the URL from the terminal output and paste it into your browser
+
+**Problem**: "Port 8080 already in use"
+- **Solution**: Stop any service using port 8080, or temporarily modify the port in `app/services/gmail/client.rb` (line with `Port: 8080`)
 
 ### Sync Not Working
 
