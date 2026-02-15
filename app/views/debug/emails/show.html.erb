@@ -145,7 +145,7 @@
   <% if @llm_calls.any? %>
     <table>
       <thead>
-        <tr><th>ID</th><th>Type</th><th>Model</th><th>Prompt</th><th>Compl.</th><th>Total</th><th>Latency</th><th>Error</th><th>Time</th><th>Prompts / Response</th></tr>
+        <tr><th>ID</th><th>Type</th><th>Model</th><th>Prompt</th><th>Compl.</th><th>Total</th><th>Latency</th><th style="width: 60px;">Error</th><th>Time</th><th style="width: 50%;">Prompts / Response</th></tr>
       </thead>
       <tbody>
         <% @llm_calls.each_with_index do |call, idx| %>
@@ -157,9 +157,9 @@
             <td><%= call.completion_tokens %></td>
             <td><%= call.total_tokens %></td>
             <td><%= call.latency_ms %>ms</td>
-            <td class="text-error"><%= call.error %></td>
+            <td class="text-error" style="width: 60px; max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<%= call.error %>"><%= call.error %></td>
             <td class="text-muted"><%= call.created_at.strftime("%H:%M:%S") %></td>
-            <td>
+            <td style="width: 50%;">
               <button class="btn btn-sm" onclick="toggleAll('llm<%= idx %>-', true)">Expand all</button>
               <button class="btn btn-sm" onclick="toggleAll('llm<%= idx %>-', false)">Collapse all</button>
               <div style="margin-top: 6px;">

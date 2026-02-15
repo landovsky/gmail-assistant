@@ -23,16 +23,17 @@
     <table>
       <thead>
         <tr>
-          <th>ID</th>
+          <th><%= sort_link("ID", "id", @filters) %></th>
           <th>User</th>
           <th>Subject</th>
           <th>Sender</th>
-          <th>Classification</th>
-          <th>Status</th>
-          <th>Confidence</th>
+          <th><%= sort_link("Classification", "classification", @filters) %></th>
+          <th><%= sort_link("Status", "status", @filters) %></th>
+          <th><%= sort_link("Confidence", "confidence", @filters) %></th>
+          <th><%= sort_link("Style", "resolved_style", @filters) %></th>
           <th>Events</th>
           <th>LLM</th>
-          <th>Received</th>
+          <th><%= sort_link("Received", "received_at", @filters) %></th>
         </tr>
       </thead>
       <tbody>
@@ -45,6 +46,7 @@
             <td><span class="badge badge-<%= email.classification %>"><%= email.classification %></span></td>
             <td><span class="badge badge-<%= email.status %>"><%= email.status %></span></td>
             <td><span class="badge badge-<%= email.confidence %>"><%= email.confidence %></span></td>
+            <td><span class="badge" style="background: var(--border); color: var(--text-secondary);"><%= email.resolved_style %></span></td>
             <td class="text-muted"><%= EmailEvent.where(user_id: email.user_id, gmail_thread_id: email.gmail_thread_id).count %></td>
             <td class="text-muted"><%= LlmCall.where(user_id: email.user_id, gmail_thread_id: email.gmail_thread_id).count %></td>
             <td class="text-muted"><%= email.received_at&.strftime("%Y-%m-%d %H:%M") %></td>
@@ -52,6 +54,34 @@
         <% end %>
       </tbody>
     </table>
+
+    <!-- Pagination -->
+    <% if @total_pages > 1 %>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px; border-top: 1px solid var(--border);">
+        <div style="color: var(--text-secondary); font-size: 14px;">
+          Showing <%= (@current_page - 1) * @per_page + 1 %>-<%= [@current_page * @per_page, @total_count].min %> of <%= @total_count %> emails
+        </div>
+        <div style="display: flex; gap: 4px;">
+          <% if @current_page > 1 %>
+            <%= pagination_link("&laquo; First", 1, @filters) %>
+            <%= pagination_link("&larr; Prev", @current_page - 1, @filters) %>
+          <% end %>
+
+          <% start_page = [@current_page - 2, 1].max %>
+          <% end_page = [start_page + 4, @total_pages].min %>
+          <% start_page = [end_page - 4, 1].max if end_page - start_page < 4 %>
+
+          <% (start_page..end_page).each do |page| %>
+            <%= pagination_link(page.to_s, page, @filters, page == @current_page) %>
+          <% end %>
+
+          <% if @current_page < @total_pages %>
+            <%= pagination_link("Next &rarr;", @current_page + 1, @filters) %>
+            <%= pagination_link("Last &raquo;", @total_pages, @filters) %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
   <% else %>
     <div class="empty">No emails found.</div>
   <% end %>
