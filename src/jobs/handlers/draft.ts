@@ -2,7 +2,7 @@ import type { JobHandler } from "../types.js";
 import type { Job, DraftPayload } from "../types.js";
 import { getAuthenticatedClient } from "../../services/gmail/auth.js";
 import { GmailClient } from "../../services/gmail/client.js";
-import { generateEmailDraft as generateDraft } from "../../services/drafting/engine.js";
+import { generateDraft } from "../../services/drafting/adapter.js";
 import { handleDraftCreated } from "../../workflows/index.js";
 import { db } from "../../db/index.js";
 import { emails, userLabels } from "../../db/schema.js";
