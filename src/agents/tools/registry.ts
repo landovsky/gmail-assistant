@@ -3,22 +3,29 @@
  * Central registry for all tools available to agents
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
 /**
  * Tool definition in OpenAI-compatible format
  */
 export interface ToolDefinition {
-  type: "function";
+  type: 'function';
   function: {
     name: string;
     description: string;
     parameters: {
-      type: "object";
+      type: 'object';
       properties: Record<string, any>;
       required?: string[];
     };
   };
+}
+
+/**
+ * Execution context passed to tool handlers
+ */
+export interface ToolContext {
+  [key: string]: unknown;
 }
 
 /**
@@ -27,6 +34,7 @@ export interface ToolDefinition {
 export type ToolHandler = (params: {
   userId: number;
   args: Record<string, any>;
+  context?: ToolContext;
 }) => Promise<string>;
 
 /**
@@ -48,11 +56,7 @@ export class ToolRegistry {
   /**
    * Register a new tool
    */
-  register(
-    definition: ToolDefinition,
-    schema: z.ZodObject<any>,
-    handler: ToolHandler
-  ): void {
+  register(definition: ToolDefinition, schema: z.ZodObject<any>, handler: ToolHandler): void {
     const name = definition.function.name;
 
     if (this.tools.has(name)) {
@@ -68,7 +72,8 @@ export class ToolRegistry {
   async execute(
     toolName: string,
     userId: number,
-    args: Record<string, any>
+    args: Record<string, any>,
+    context?: ToolContext
   ): Promise<string> {
     const tool = this.tools.get(toolName);
 
@@ -81,7 +86,7 @@ export class ToolRegistry {
       const validatedArgs = tool.schema.parse(args);
 
       // Execute handler
-      const result = await tool.handler({ userId, args: validatedArgs });
+      const result = await tool.handler({ userId, args: validatedArgs, context });
 
       return result;
     } catch (error) {
@@ -89,8 +94,7 @@ export class ToolRegistry {
         return `Error: Invalid arguments for ${toolName}: ${error.message}`;
       }
 
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       return `Error executing ${toolName}: ${errorMessage}`;
     }
   }
