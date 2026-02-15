@@ -64,3 +64,4 @@ An AI-powered Gmail inbox management system that automatically classifies incomi
 - [10-auth-config.md](10-auth-config.md) - Authentication and configuration
 - [11-llm-integration.md](11-llm-integration.md) - LLM gateway patterns
 - [12-test-coverage.md](12-test-coverage.md) - Integration test cases
+- [13-ui-interfaces.md](13-ui-interfaces.md) - Browser-based UI specifications
