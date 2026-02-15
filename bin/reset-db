@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Reset database to clean slate: delete all transient data while
+# preserving user accounts, labels, and settings.
+# Usage:
+#   bin/reset-db          # reset and show stats
+#   bin/reset-db resync   # reset + trigger full Gmail sync
+#   bin/reset-db resync 1 # reset + sync for specific user
+set -euo pipefail
+
+MODE="${1:-}"
+USER_ID="${2:-}"
+
+if [ "$MODE" = "resync" ]; then
+  if [ "$USER_ID" = "" ]; then
+    bundle exec rake "sync:reset_and_sync"
+  else
+    bundle exec rake "sync:reset_and_sync[${USER_ID}]"
+  fi
+else
+  bundle exec rake "db_management:reset"
+fi
