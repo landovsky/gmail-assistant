@@ -8,7 +8,7 @@ import { emails, jobs, syncState } from "../db/schema.js";
 import { eq, and, inArray } from "drizzle-orm";
 import { GmailClient } from "../services/gmail/client.js";
 import { syncMessages } from "../services/gmail/sync.js";
-import { classifyEmail } from "../services/classification/engine.js";
+import { classifyEmailTwoTier as classifyEmail } from "../services/classification/engine.js";
 import { handleClassificationComplete } from "./email-lifecycle.js";
 import type { JobQueue } from "../jobs/queue/interface.js";
 

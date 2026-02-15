@@ -2,7 +2,7 @@ import type { JobHandler } from "../types.js";
 import type { Job, ReworkPayload } from "../types.js";
 import { getAuthenticatedClient } from "../../services/gmail/auth.js";
 import { GmailClient } from "../../services/gmail/client.js";
-import { regenerateDraft } from "../../services/drafting/rework.js";
+import { handleDraftRework as regenerateDraft } from "../../services/drafting/rework.js";
 import { handleReworkRequested, handleDraftCreated } from "../../workflows/index.js";
 import { db } from "../../db/index.js";
 import { emails, userLabels } from "../../db/schema.js";

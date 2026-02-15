@@ -2,7 +2,7 @@ import type { JobHandler } from "../types.js";
 import type { Job, ClassifyPayload } from "../types.js";
 import { getAuthenticatedClient } from "../../services/gmail/auth.js";
 import { GmailClient } from "../../services/gmail/client.js";
-import { classifyEmail } from "../../services/classification/engine.js";
+import { classifyEmailTwoTier as classifyEmail } from "../../services/classification/engine.js";
 import { handleClassificationComplete } from "../../workflows/index.js";
 import { db } from "../../db/index.js";
 import { emails, userLabels } from "../../db/schema.js";
