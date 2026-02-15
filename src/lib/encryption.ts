@@ -1,15 +1,13 @@
 // Encryption/decryption utilities for Rails ActiveSupport::MessageEncryptor format
-import { createDecipheriv, pbkdf2Sync } from 'crypto';
+import { createDecipheriv } from 'crypto';
 
-const ALGORITHM = 'aes-256-gcm';
-const AUTH_TAG_LENGTH = 16;
+const ALGORITHM = 'aes-128-gcm';  // Rails 7.2 uses AES-128-GCM by default
 
 /**
  * Decrypt Rails ActiveSupport::MessageEncryptor encrypted credentials
  * Format: CIPHERTEXT--IV--AUTH_TAG (base64 encoded, separated by --)
  *
- * Rails uses PBKDF2 to derive both encryption and signing keys from the master key.
- * Since we only need decryption, we derive the encryption key.
+ * Rails 7.2 uses AES-128-GCM with the master.key directly as the encryption key (16 bytes).
  */
 export function decryptCredentials(encrypted: string, masterKey: string): string {
   const parts = encrypted.split('--');
@@ -23,14 +21,12 @@ export function decryptCredentials(encrypted: string, masterKey: string): string
   const iv = Buffer.from(ivB64, 'base64');
   const authTag = Buffer.from(authTagB64, 'base64');
 
-  // Derive encryption key using PBKDF2 (Rails default: 65536 iterations)
-  // Rails uses the master key as the password and a fixed salt
-  const salt = Buffer.from('');  // Rails uses empty salt for derivation
-  const iterations = 1000;  // Adjusted - Rails uses 65536 but may vary
-  const keyLength = 32;  // AES-256 requires 32 bytes
-
-  // Rails MessageEncryptor uses raw master key bytes
+  // Master key is used directly as AES-128 key (32 hex chars = 16 bytes)
   const key = Buffer.from(masterKey, 'hex');
+
+  if (key.length !== 16) {
+    throw new Error(`Invalid master key length: expected 16 bytes, got ${key.length}`);
+  }
 
   const decipher = createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(authTag);
