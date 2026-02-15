@@ -43,20 +43,24 @@ export class DraftHandler implements JobHandler {
     const draftResult = await generateDraft({
       userId: email.userId,
       threadId: email.gmailThreadId,
-      communicationStyle: email.communicationStyle || "professional",
+      subject: email.subject,
+      from: email.from,
+      body: email.body || "",
+      communicationStyle: email.communicationStyle || "business",
       language: email.language || "en",
       client,
     });
 
     // Create Gmail draft
-    const draft = await client.createDraft({
-      threadId: email.gmailThreadId,
-      subject: `Re: ${email.subject}`,
-      body: draftResult.body,
-      inReplyTo: email.gmailMessageId,
-    });
+    const draft = await client.createDraft(
+      email.gmailThreadId,
+      email.from, // to
+      `Re: ${email.subject}`,
+      draftResult.body,
+      email.gmailMessageId
+    );
 
-    if (!draft.id) {
+    if (!draft.draftId) {
       throw new Error("Failed to create Gmail draft - no draft ID returned");
     }
 
@@ -64,11 +68,11 @@ export class DraftHandler implements JobHandler {
     await handleDraftCreated({
       userId: email.userId,
       threadId: email.gmailThreadId,
-      draftId: draft.id,
+      draftId: draft.draftId,
       client,
       labelMappings,
     });
 
-    console.log(`✓ Draft created for email ${payload.email_id}: draft_id=${draft.id}`);
+    console.log(`✓ Draft created for email ${payload.email_id}: draft_id=${draft.draftId}`);
   }
 }
