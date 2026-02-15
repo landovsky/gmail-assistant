@@ -19,9 +19,12 @@ namespace :gmail do
       exit 0
     end
 
+    # Build label_id -> name lookup
+    label_names = user.user_labels.each_with_object({}) { |ul, h| h[ul.gmail_label_id] = ul.label_key }
+
     puts "AI labels to clean:"
-    user.user_labels.each do |ul|
-      puts "  #{ul.label_key}: #{ul.gmail_label_id}"
+    label_names.each do |gmail_id, name|
+      puts "  #{name} (#{gmail_id})"
     end
     puts ""
 
@@ -33,7 +36,7 @@ namespace :gmail do
         next if messages.empty?
 
         total_affected += messages.size
-        puts "Label #{label_id}: #{messages.size} messages"
+        puts "#{label_names[label_id] || label_id}: #{messages.size} messages"
 
         messages.first(5).each do |msg_ref|
           begin
