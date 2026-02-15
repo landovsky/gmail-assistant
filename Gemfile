@@ -18,8 +18,8 @@ gem "sidekiq", "~> 7.0"
 gem "google-apis-gmail_v1"
 gem "googleauth"
 
-# HTTP client for LiteLLM gateway
-gem "httparty"
+# LLM client
+gem "ruby_llm"
 
 # Configuration management (YAML + env overrides)
 gem "dotenv-rails"
