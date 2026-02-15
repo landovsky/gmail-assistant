@@ -7,6 +7,7 @@ import { handleClassificationComplete } from "../../workflows/index.js";
 import { db } from "../../db/index.js";
 import { emails, userLabels } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
+import { messageParser } from "../../services/gmail/message-parser.js";
 
 export class ClassifyHandler implements JobHandler {
   private queue: any; // JobQueue injected via constructor
@@ -37,23 +38,25 @@ export class ClassifyHandler implements JobHandler {
     }));
 
     // Fetch message details
-    const message = await client.getMessage(payload.message_id);
+    const gmailMessage = await client.getMessage(payload.message_id);
 
-    if (!message) {
+    if (!gmailMessage) {
       throw new Error(`Message ${payload.message_id} not found`);
     }
 
+    // Parse message
+    const message = messageParser.parseMessage(gmailMessage);
+
     // Classify the email
-    const classification = await classifyEmail({
+    const classification = await classify({
       userId: payload.user_id,
       threadId: payload.thread_id,
-      subject: message.subject || "",
-      from: message.from || "",
-      body: message.body || "",
-      headers: message.headers || {},
-      labelMappings,
-      client,
-    });
+      messageId: payload.message_id,
+      subject: message.subject,
+      from: message.from,
+      body: message.body,
+      headers: message.headers,
+    }, labelMappings);
 
     // Create email record
     const [email] = await db
@@ -62,8 +65,8 @@ export class ClassifyHandler implements JobHandler {
         userId: payload.user_id,
         gmailThreadId: payload.thread_id,
         gmailMessageId: payload.message_id,
-        subject: message.subject || "",
-        from: message.from || "",
+        subject: message.subject,
+        from: message.from,
         classification: classification.category,
         status: classification.category === "needs_response" ? "pending" : "skipped",
         classificationLabel: classification.labelId,
