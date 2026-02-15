@@ -7,6 +7,7 @@ class EmailEvent < ApplicationRecord
     classified label_added label_removed draft_created draft_trashed
     draft_reworked sent_detected archived rework_limit_reached
     agent_completed agent_max_iterations agent_error
+    escalated reply_sent
     error
   ].freeze
 

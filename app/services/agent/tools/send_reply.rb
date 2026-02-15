@@ -26,14 +26,13 @@ module Agent
         subject = headers.find { |h| h.name == "Subject" }&.value
         to_address = reply_to || from
 
-        # Create and send as draft, then would need gmail.send scope
-        # Since we only have gmail.modify, create draft with outbox label
+        # Create draft and mark as sent
+        # Since we only have gmail.modify scope, we create a draft
         draft = gmail_client.create_draft(
           to: to_address,
           subject: "Re: #{subject}",
-          body: message,
-          thread_id: thread_id,
-          in_reply_to: last_message.id
+          body_html: message,
+          thread_id: thread_id
         )
 
         # Log the event
