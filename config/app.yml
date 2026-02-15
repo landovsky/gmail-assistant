@@ -16,6 +16,7 @@ llm:
   max_draft_tokens: 2048
 
 sync:
+  pubsub_topic: projects/gmail-mcp-server-support/topics/gmail-notifications-dev
   fallback_interval_minutes: 15
   full_sync_interval_hours: 1
   history_max_results: 100
