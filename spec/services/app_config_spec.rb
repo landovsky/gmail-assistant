@@ -9,7 +9,7 @@ RSpec.describe AppConfig do
 
   describe ".get" do
     it "reads values from the YAML config" do
-      expect(described_class.get(:llm, :classify_model)).to eq("gemini/gemini-2.0-flash")
+      expect(described_class.get(:llm, :classify_model)).to eq("gemini-2.0-flash")
     end
 
     it "returns default when section is missing" do
@@ -37,8 +37,8 @@ RSpec.describe AppConfig do
   describe ".llm" do
     it "returns LLM configuration" do
       config = described_class.llm
-      expect(config.classify_model).to eq("gemini/gemini-2.0-flash")
-      expect(config.draft_model).to eq("gemini/gemini-2.5-pro")
+      expect(config.classify_model).to eq("gemini-2.0-flash")
+      expect(config.draft_model).to eq("gemini-2.5-pro")
       expect(config.max_classify_tokens).to eq(256)
       expect(config.max_draft_tokens).to eq(2048)
     end

@@ -10,8 +10,7 @@ class LlmGateway
 
   DEFAULT_TIMEOUT = 60
 
-  def initialize(base_url: nil, timeout: nil, user: nil)
-    # base_url is deprecated (was used for LiteLLM proxy), kept for backward compatibility
+  def initialize(timeout: nil, user: nil, **_deprecated)
     @timeout = timeout || DEFAULT_TIMEOUT
     @user = user
   end
@@ -19,7 +18,7 @@ class LlmGateway
   # Main entry point: send a chat completion request.
   # Returns { content:, response_text:, tool_calls:, prompt_tokens:, completion_tokens:, total_tokens: }
   def chat(model:, messages:, max_tokens: nil, temperature: 0.7, response_format: nil,
-           tools: nil, user: nil, gmail_thread_id: nil, call_type: "classify")
+           tools: nil, user: nil, gmail_thread_id: nil, call_type: 'classify')
     effective_user = user || @user
     start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
@@ -63,14 +62,14 @@ class LlmGateway
   end
 
   # Convenience method for structured JSON responses
-  def chat_json(model:, messages:, max_tokens: nil, temperature: 0.3, **kwargs)
+  def chat_json(model:, messages:, max_tokens: nil, temperature: 0.3, **)
     result = chat(
       model: model,
       messages: messages,
       max_tokens: max_tokens,
       temperature: temperature,
-      response_format: { type: "json_object" },
-      **kwargs
+      response_format: { type: 'json_object' },
+      **
     )
 
     parsed_json = JSON.parse(result[:response_text] || result[:content])
@@ -83,7 +82,7 @@ class LlmGateway
 
   def normalize_model_name(model)
     # Strip provider prefix if present (e.g., "gemini/gemini-2.0-flash" -> "gemini-2.0-flash")
-    model.to_s.sub(%r{^[^/]+/}, "")
+    model.to_s.sub(%r{^[^/]+/}, '')
   end
 
   def make_ruby_llm_call(model, messages, max_tokens, temperature, response_format, tools)
@@ -101,47 +100,34 @@ class LlmGateway
     chat = chat.with_max_tokens(max_tokens) if max_tokens
 
     # Set response format for JSON mode
-    if response_format&.dig(:type) == "json_object"
-      chat = chat.with_params(response_format: { type: "json_object" })
-    end
+    chat = chat.with_params(response_format: { type: 'json_object' }) if response_format&.dig(:type) == 'json_object'
 
-    # TODO: Handle tools if needed (agent framework feature)
-    # For now, raise error if tools are requested
-    raise LlmError, "Tool calling not yet supported with RubyLLM" if tools.present?
+    # TODO: Tool calling support for agent framework
+    Rails.logger.warn('LlmGateway: tool calling not yet supported with RubyLLM, ignoring tools') if tools.present?
 
-    # Extract user messages and send them
-    user_messages = messages.select { |m| m[:role] == "user" }
-    raise LlmError, "No user messages found" if user_messages.empty?
+    # Extract user messages and send
+    user_messages = messages.select { |m| m[:role] == 'user' }
+    raise LlmError, 'No user messages found' if user_messages.empty?
 
-    # Send the user message (combine if multiple)
     combined_user_message = user_messages.map { |m| m[:content] }.join("\n\n")
-    response = chat.send_message(combined_user_message)
-
-    response
+    chat.ask(combined_user_message)
   rescue RubyLLM::RateLimitError => e
     raise RateLimitError, "Rate limit exceeded: #{e.message}"
-  rescue RubyLLM::TimeoutError, Timeout::Error => e
+  rescue Timeout::Error, Faraday::TimeoutError, Faraday::ConnectionFailed => e
     raise TimeoutError, "LLM timeout: #{e.message}"
   rescue RubyLLM::Error => e
     raise LlmError, "LLM error: #{e.message}"
-  rescue StandardError => e
-    raise LlmError, "Unexpected error: #{e.message}"
   end
 
   def parse_response(response)
-    # RubyLLM::Message response object
-    # Extract content, tool calls, and usage stats
-    content = response.content || response.text || ""
+    content = response.content.to_s
 
     tool_calls = if response.respond_to?(:tool_calls) && response.tool_calls.present?
                    parse_tool_calls(response.tool_calls)
                  end
 
-    # Extract token usage
-    usage = response.respond_to?(:usage) ? response.usage : {}
-    prompt_tokens = usage[:prompt_tokens] || usage["prompt_tokens"] || 0
-    completion_tokens = usage[:completion_tokens] || usage["completion_tokens"] || 0
-    total_tokens = usage[:total_tokens] || usage["total_tokens"] || (prompt_tokens + completion_tokens)
+    prompt_tokens = response.input_tokens || 0
+    completion_tokens = response.output_tokens || 0
 
     {
       content: content,
@@ -149,8 +135,8 @@ class LlmGateway
       tool_calls: tool_calls,
       prompt_tokens: prompt_tokens,
       completion_tokens: completion_tokens,
-      total_tokens: total_tokens,
-      finish_reason: response.respond_to?(:finish_reason) ? response.finish_reason : "stop"
+      total_tokens: prompt_tokens + completion_tokens,
+      finish_reason: 'stop'
     }
   end
 
@@ -158,12 +144,12 @@ class LlmGateway
     return nil if raw_tool_calls.blank?
 
     raw_tool_calls.map do |tc|
-      arguments = tc.respond_to?(:arguments) ? tc.arguments : tc["arguments"]
+      arguments = tc.respond_to?(:arguments) ? tc.arguments : tc['arguments']
       parsed_args = arguments.is_a?(String) ? JSON.parse(arguments) : (arguments || {})
 
       {
-        id: tc.respond_to?(:id) ? tc.id : tc["id"],
-        name: tc.respond_to?(:name) ? tc.name : tc["name"],
+        id: tc.respond_to?(:id) ? tc.id : tc['id'],
+        name: tc.respond_to?(:name) ? tc.name : tc['name'],
         arguments: parsed_args
       }
     end
@@ -172,10 +158,10 @@ class LlmGateway
   end
 
   def extract_system_prompt(messages)
-    messages.find { |m| m[:role] == "system" }&.dig(:content)
+    messages.find { |m| m[:role] == 'system' }&.dig(:content)
   end
 
   def extract_user_message(messages)
-    messages.select { |m| m[:role] == "user" }.last&.dig(:content)
+    messages.select { |m| m[:role] == 'user' }.last&.dig(:content)
   end
 end
