@@ -2,9 +2,10 @@
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { decryptCredentials } from '../../lib/encryption';
+import { decryptCredentials } from '../../lib/encryption.js';
 import http from 'http';
 import { URL } from 'url';
+import open from 'open';
 
 const SCOPES = ['https://www.googleapis.com/auth/gmail.modify'];
 const REDIRECT_PORT = 3001;
@@ -40,7 +41,29 @@ export function loadCredentials(masterKeyPath: string): GoogleCredentials {
   if (encryptedCreds) {
     const masterKey = readFileSync(masterKeyPath, 'utf-8').trim();
     const decrypted = decryptCredentials(encryptedCreds, masterKey);
-    return JSON.parse(decrypted);
+
+    // Parse YAML-like format from Rails credentials
+    // Extract the google credentials section
+    const googleMatch = decrypted.match(/google:\s*\n((?:\s+.+\n?)+)/);
+    if (!googleMatch) {
+      throw new Error('Google credentials not found in encrypted credentials');
+    }
+
+    const googleSection = googleMatch[1];
+    const clientIdMatch = googleSection.match(/client_id:\s*(.+)/);
+    const clientSecretMatch = googleSection.match(/client_secret:\s*(.+)/);
+
+    if (!clientIdMatch || !clientSecretMatch) {
+      throw new Error('Invalid Google credentials format in encrypted credentials');
+    }
+
+    return {
+      installed: {
+        client_id: clientIdMatch[1].trim(),
+        client_secret: clientSecretMatch[1].trim(),
+        redirect_uris: [REDIRECT_URI],
+      },
+    };
   }
 
   // Fallback to credentials file
@@ -108,8 +131,7 @@ export async function runConsentFlow(oauth2Client: OAuth2Client): Promise<string
   console.log();
 
   // Open browser
-  const open = await import('open');
-  await open.default(authUrl);
+  await open(authUrl);
 
   // Start local server to receive callback
   return new Promise((resolve, reject) => {
