@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "webrick"
+
 module Gmail
   # Wrapper around the Google Gmail API v1 client.
   # Handles authentication, token refresh, and provides domain-specific methods.
@@ -172,17 +174,80 @@ module Gmail
         raise AuthenticationError, "Credentials file not found: #{credentials_file}"
       end
 
-      if File.exist?(token_file)
-        authorizer = Google::Auth::UserAuthorizer.new(
-          Google::Auth::ClientId.from_file(credentials_file.to_s),
-          SCOPES,
-          Google::Auth::Stores::FileTokenStore.new(file: token_file.to_s)
-        )
-        credentials = authorizer.get_credentials("default")
-        return credentials if credentials
+      authorizer = Google::Auth::UserAuthorizer.new(
+        Google::Auth::ClientId.from_file(credentials_file.to_s),
+        SCOPES,
+        Google::Auth::Stores::FileTokenStore.new(file: token_file.to_s)
+      )
+
+      # Try to get existing credentials
+      credentials = authorizer.get_credentials("default")
+      return credentials if credentials
+
+      # No token file or expired token - trigger OAuth consent flow
+      Rails.logger.info("No valid credentials found, triggering OAuth consent flow...")
+
+      # Use localhost callback server for authorization
+      callback_uri = "http://localhost:8080/"
+      url = authorizer.get_authorization_url(base_url: callback_uri)
+
+      Rails.logger.info("Starting local callback server on port 8080...")
+
+      # Start a simple web server to receive the OAuth callback
+      code = nil
+      server = WEBrick::HTTPServer.new(Port: 8080, AccessLog: [], Logger: WEBrick::Log.new("/dev/null"))
+
+      server.mount_proc "/" do |req, res|
+        code = req.query["code"]
+        res.body = <<~HTML
+          <html>
+          <head><title>Authorization Successful</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>✓ Authorization Successful!</h1>
+            <p>You can close this window and return to the terminal.</p>
+          </body>
+          </html>
+        HTML
+        server.shutdown
       end
 
-      raise AuthenticationError, "No valid token found. Run auth:init first."
+      puts "\n" + "=" * 80
+      puts "GMAIL AUTHORIZATION REQUIRED"
+      puts "=" * 80
+      puts "\nOpening browser for Google OAuth consent..."
+      puts "\nIf your browser doesn't open automatically, visit:\n"
+      puts "   #{url}\n"
+      puts "=" * 80 + "\n"
+
+      # Try to open the browser automatically
+      begin
+        if RbConfig::CONFIG["host_os"] =~ /darwin/
+          system("open", url)
+        elsif RbConfig::CONFIG["host_os"] =~ /linux/
+          system("xdg-open", url)
+        elsif RbConfig::CONFIG["host_os"] =~ /mswin|mingw|cygwin/
+          system("start", url)
+        end
+      rescue StandardError => e
+        Rails.logger.warn("Could not open browser automatically: #{e.message}")
+      end
+
+      # Wait for callback
+      server.start
+
+      unless code
+        raise AuthenticationError, "No authorization code received from OAuth callback"
+      end
+
+      credentials = authorizer.get_and_store_credentials_from_code(
+        user_id: "default",
+        code: code,
+        base_url: callback_uri
+      )
+
+      Rails.logger.info("✓ Authorization successful! Credentials saved to #{token_file}")
+
+      credentials
     rescue StandardError => e
       raise AuthenticationError, "Authentication failed: #{e.message}" unless e.is_a?(AuthenticationError)
 

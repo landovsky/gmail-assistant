@@ -17,7 +17,7 @@ module Api
 
       # Create Gmail client and get user email from profile
       begin
-        gmail_client = Gmail::Client.new(credentials_path: credentials_path.to_s)
+        gmail_client = Gmail::Client.new
         profile = gmail_client.get_profile
         user_email = profile.email_address
       rescue StandardError => e
