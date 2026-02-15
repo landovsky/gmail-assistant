@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "webrick"
+require "googleauth"
+require "googleauth/stores/file_token_store"
 
 module Gmail
   # Wrapper around the Google Gmail API v1 client.
