@@ -104,23 +104,26 @@ namespace :gmail do
         end
       end
 
-      puts "Total drafts: #{drafts.drafts.size}"
-      puts "AI-generated drafts (with rework marker): #{ai_drafts.size}"
-      puts ""
-
-      ai_drafts.each do |d|
-        puts "  - #{d[:subject] || '(no subject)'}"
-      end
-
-      if mode == "delete" && ai_drafts.any?
+      if ai_drafts.empty?
+        puts "\e[32mNo AI-generated drafts found (checked #{drafts.drafts.size} drafts).\e[0m"
+      else
+        puts "Found #{ai_drafts.size} AI-generated drafts (out of #{drafts.drafts.size} total):"
         puts ""
+
         ai_drafts.each do |d|
-          gmail_client.delete_draft(d[:id])
-          puts "\e[31m  Deleted: #{d[:subject]}\e[0m"
+          puts "  - #{d[:subject] || '(no subject)'}"
         end
-        puts "\e[32m\nDeleted #{ai_drafts.size} AI drafts.\e[0m"
-      elsif ai_drafts.any?
-        puts "\n\e[33mRun with mode=delete to apply: rake gmail:cleanup_drafts[#{user.id},delete]\e[0m"
+
+        if mode == "delete"
+          puts ""
+          ai_drafts.each do |d|
+            gmail_client.delete_draft(d[:id])
+            puts "\e[31m  Deleted: #{d[:subject]}\e[0m"
+          end
+          puts "\e[32m\nDeleted #{ai_drafts.size} AI drafts.\e[0m"
+        else
+          puts "\n\e[33mRun with mode=delete to apply: rake gmail:cleanup_drafts[#{user.id},delete]\e[0m"
+        end
       end
     rescue Gmail::Client::GmailApiError => e
       puts "\e[31mGmail API error: #{e.message}\e[0m"
