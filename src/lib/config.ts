@@ -30,8 +30,8 @@ const ConfigSchema = z.object({
     contextModel: z.string().default('google/gemini-2.0-flash-exp'),
   }),
   gmail: z.object({
-    credentialsPath: z.string().default('credentials.json'),
-    tokenPath: z.string().default('token.json'),
+    credentialsPath: z.string().default('config/credentials.json'),
+    tokenPath: z.string().default('config/token.json'),
     pubsubTopic: z.string().optional(),
   }),
 });
