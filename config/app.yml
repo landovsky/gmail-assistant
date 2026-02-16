@@ -17,5 +17,5 @@ llm:
   contextModel: "google/gemini-2.0-flash-exp"
 
 gmail:
-  credentialsPath: "credentials.json"
-  tokenPath: "token.json"
+  credentialsPath: "config/credentials.json"
+  tokenPath: "config/token.json"
