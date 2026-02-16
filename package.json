@@ -3,9 +3,13 @@
   "version": "2.0.0",
   "description": "AI-powered Gmail inbox management system",
   "type": "module",
+  "bin": {
+    "gmail-cli": "./dist/cli/index.js"
+  },
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "start": "bun run src/index.ts",
+    "cli": "tsx src/cli/index.ts",
     "test": "tsx --test --import ./tests/setup.ts tests/**/*.test.ts",
     "test:watch": "tsx --test --watch --import ./tests/setup.ts tests/**/*.test.ts",
     "test:e2e": "tsx --test --import ./tests/setup.ts tests/e2e/**/*.test.ts",
@@ -24,6 +28,7 @@
     "@hono/node-server": "^1.13.7",
     "ai": "^4.0.38",
     "bullmq": "^5.28.3",
+    "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.36.4",
