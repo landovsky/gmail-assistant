@@ -10,6 +10,8 @@ import { briefingRoutes } from "./routes/briefing.js";
 import { debugRoutes } from "./routes/debug.js";
 import { webhookRoutes } from "./routes/webhook.js";
 import { basicAuth } from "./middleware/auth.js";
+import { uiRoutes } from "../ui/routes.js";
+import { adminRoutes } from "../ui/admin-routes.js";
 
 export const app = new Hono();
 
@@ -24,6 +26,7 @@ app.route("/webhook", webhookRoutes);
 // Protected routes (auth required)
 app.use("/api/*", basicAuth);
 app.use("/debug/*", basicAuth);
+app.use("/admin/*", basicAuth);
 
 app.route("/api/users", userRoutes);
 app.route("/api/auth", authRoutes);
@@ -31,6 +34,10 @@ app.route("/api", syncRoutes); // /api/sync and /api/reset
 app.route("/api/watch", watchRoutes);
 app.route("/api/briefing", briefingRoutes);
 app.route("/api", debugRoutes); // /api/debug/emails and /api/emails/:id
+
+// HTML UI routes
+app.route("/debug", uiRoutes); // /debug/emails and /debug/email/:id
+app.route("/admin", adminRoutes); // /admin/* database browser
 
 // Root redirect
 app.get("/", (c) => c.redirect("/debug/emails"));
