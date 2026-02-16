@@ -3,9 +3,9 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { Database } from "bun:sqlite";
+import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import * as schema from "../../../db/schema.js";
 import { GmailLabelService, AI_LABELS } from "../labels.js";
 import { clearDatabase, createTestUser } from "../../../db/seeds/test-helpers.js";
@@ -32,7 +32,7 @@ vi.mock("googleapis", () => ({
 
 // Mock getDb to return test database
 const sqlite = new Database(":memory:");
-sqlite.pragma("foreign_keys = ON");
+sqlite.exec("PRAGMA foreign_keys = ON;");
 const db = drizzle(sqlite, { schema });
 
 vi.mock("../../../db/index.js", () => ({

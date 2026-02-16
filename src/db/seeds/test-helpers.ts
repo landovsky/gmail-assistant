@@ -3,7 +3,7 @@
  * Provides utilities to quickly create test data
  */
 
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import * as schema from "../schema.js";
 import type { NewUser, NewEmail, NewUserLabel, NewJob } from "../schema.js";
 
@@ -11,7 +11,7 @@ import type { NewUser, NewEmail, NewUserLabel, NewJob } from "../schema.js";
  * Create a test user with minimal data
  */
 export function createTestUser(
-  db: BetterSQLite3Database<typeof schema>,
+  db: BunSQLiteDatabase<typeof schema>,
   overrides: Partial<NewUser> = {}
 ): schema.User {
   const email = overrides.email || `test-${Date.now()}@example.com`;
@@ -31,7 +31,7 @@ export function createTestUser(
  * Create a test email with minimal data
  */
 export function createTestEmail(
-  db: BetterSQLite3Database<typeof schema>,
+  db: BunSQLiteDatabase<typeof schema>,
   userId: number,
   overrides: Partial<Omit<NewEmail, "userId">> = {}
 ): schema.Email {
@@ -70,7 +70,7 @@ export function createTestEmail(
  * Create test labels for a user
  */
 export function createTestLabels(
-  db: BetterSQLite3Database<typeof schema>,
+  db: BunSQLiteDatabase<typeof schema>,
   userId: number
 ): schema.UserLabel[] {
   const labelKeys = [
@@ -98,7 +98,7 @@ export function createTestLabels(
  * Create a test job
  */
 export function createTestJob(
-  db: BetterSQLite3Database<typeof schema>,
+  db: BunSQLiteDatabase<typeof schema>,
   userId: number,
   overrides: Partial<Omit<NewJob, "userId">> = {}
 ): schema.Job {
@@ -123,7 +123,7 @@ export function createTestJob(
  * Create a complete test user with labels, settings, and sync state
  */
 export function createCompleteTestUser(
-  db: BetterSQLite3Database<typeof schema>,
+  db: BunSQLiteDatabase<typeof schema>,
   email?: string
 ): {
   user: schema.User;
@@ -163,7 +163,7 @@ export function createCompleteTestUser(
  * Create a batch of test emails for a user
  */
 export function createTestEmails(
-  db: BetterSQLite3Database<typeof schema>,
+  db: BunSQLiteDatabase<typeof schema>,
   userId: number,
   count: number,
   baseOverrides: Partial<Omit<NewEmail, "userId">> = {}
@@ -186,7 +186,7 @@ export function createTestEmails(
 /**
  * Clear all data from the database (useful for test cleanup)
  */
-export function clearDatabase(db: BetterSQLite3Database<typeof schema>) {
+export function clearDatabase(db: BunSQLiteDatabase<typeof schema>) {
   // Delete in order respecting foreign keys
   db.delete(schema.agentRuns).run();
   db.delete(schema.llmCalls).run();
@@ -202,7 +202,7 @@ export function clearDatabase(db: BetterSQLite3Database<typeof schema>) {
 /**
  * Create a minimal test dataset (1 user, labels, 3 emails)
  */
-export function createMinimalTestDataset(db: BetterSQLite3Database<typeof schema>) {
+export function createMinimalTestDataset(db: BunSQLiteDatabase<typeof schema>) {
   const { user, labels } = createCompleteTestUser(db);
   const emails = createTestEmails(db, user.id, 3, {
     classification: "needs_response",

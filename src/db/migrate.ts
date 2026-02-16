@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -7,8 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export function runMigrations(dbPath: string) {
-  const db = new Database(dbPath);
-  db.pragma("foreign_keys = ON");
+  const db = new Database(dbPath, { strict: true });
+  db.exec("PRAGMA foreign_keys = ON;");
   
   const migrationPath = join(__dirname, "../../drizzle/0000_init.sql");
   const migration = readFileSync(migrationPath, "utf-8");
