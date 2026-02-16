@@ -18,8 +18,8 @@ const initQuerySchema = z.object({
     .default('true'),
 });
 
-// POST /api/auth/init - Bootstrap OAuth and onboard first user
-authRoutes.post('/init', async (c) => {
+// GET/POST /api/auth/init - Bootstrap OAuth and onboard first user
+const initHandler = async (c: any) => {
   // Parse query params
   const raw = {
     display_name: c.req.query('display_name'),
@@ -147,4 +147,8 @@ authRoutes.post('/init', async (c) => {
       500
     );
   }
-});
+};
+
+// Support both GET and POST for browser access
+authRoutes.get('/init', initHandler);
+authRoutes.post('/init', initHandler);

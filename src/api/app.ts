@@ -21,6 +21,7 @@ app.use("*", cors());
 
 // Public routes (no auth required)
 app.route("/api/health", healthRoutes);
+app.route("/api/auth", authRoutes); // Auth init must be public for onboarding
 app.route("/webhook", webhookRoutes);
 
 // Protected routes (auth required)
@@ -29,7 +30,6 @@ app.use("/debug/*", basicAuth);
 app.use("/admin/*", basicAuth);
 
 app.route("/api/users", userRoutes);
-app.route("/api/auth", authRoutes);
 app.route("/api", syncRoutes); // /api/sync and /api/reset
 app.route("/api/watch", watchRoutes);
 app.route("/api/briefing", briefingRoutes);
