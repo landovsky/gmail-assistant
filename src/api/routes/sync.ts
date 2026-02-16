@@ -8,7 +8,7 @@ const db = getDb();
 const queue = getJobQueue();
 
 // POST /api/sync - Enqueue a sync job for a user
-syncRoutes.post("/", async (c) => {
+syncRoutes.post("/sync", async (c) => {
   const user_id = parseInt(c.req.query("user_id") || "1");
   const force_full = c.req.query("full") === "true";
 
